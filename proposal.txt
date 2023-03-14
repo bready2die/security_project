@@ -1,0 +1,67 @@
+goal/motivation: to understand how malware works at the kernel level, and better
+understand the constraints/possibilities of what can be done in kernel space.
+
+Team members: Cyrus, Nick, and Ethan
+
+feature timeline:
+(mid-to-late february)
+-privelige escalation backdoor(either through signals or ioctls)
+-compromising /dev/urandom
+-hiding files and/or directories
+
+(rest of time)
+-(advanced)exploring process injection techniques
+    -overwriting text segment directly
+    -overriding/redirecting dynamic symbols
+
+evaluation plans:
+???
+
+technical requirements:
+-32-bit virtual machine running through qemu
+-github repo
+
+
+
+description of project code files:
+
+kernel module
+-registers a char device that exposes ioctl commands for the client command 
+    interpreter
+
+user-facing application
+-converts terminal commands from user into ioctl commands to the registered char
+    device
+
+
+
+PROCESS INJECTION RESEARCH
+--------------------------------------------------------------------------------
+from philip: process_vm_writev/readv
+
+
+
+files of interest:
+fs/exec.c (code for executing new programs)
+include/linux/binfmts.h (header lib for loading of various binaries)
+fs/binfmt_elf (code for loading elf binaries)
+
+structs of interest:
+include/linux/binfmts.h:
+    linux_binprm (stores state for exec'ing programs)
+    linux_binfmt (defines a type of binary file, contains callbacks for loading 
+        binaries and shared libraries)
+    
+functions of interest:
+fs/exec.c:
+    do_execve (top-level kernel routine for execve)
+    do_execveat_common
+    bprm_execve
+    do_open_execat (this calls deny_write_access on the progam file, may want to
+        undo this)
+    exec_binprm
+    search_binary_handler (finds the correct loader)
+fs/binfmt_elf:
+    load_elf_binary (loads elf binaries, HUGE(500+ lines))
+    load_elf_library (loads elf libraries, much smaller but only appears to be
+        used for dynamic loading rather than linking)
