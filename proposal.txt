@@ -1,67 +1,38 @@
-goal/motivation: to understand how malware works at the kernel level, and better
-understand the constraints/possibilities of what can be done in kernel space.
 
-Team members: Cyrus, Nick, and Ethan
+Project Proposal: Persistent Rootkit through Kernel Module Injection
+Goal/Motivation: To understand the inner workings of malware at the kernel level and to gain a
+deeper understanding of the constraints and possibilities of actions in the kernel space.
+Team Members:
+Cyrus Majd cm1355, Nicholas Gottwerth nmg138, and Ethan Smithweiss ejs235
+Feature Timeline:
+● Mid-to-late March:
+○ Privilege escalation backdoor (either through signals or ioctls)
+○ Compromising /dev/urandom
+○ Hiding files and/or directories from userspace
+● Rest of the semester:
+○ Advanced exploration of process injection techniques
+■ Overwriting text segment directly
+■ Overriding/redirecting dynamic symbols
+Evaluation Plans: In order to assess the success of our project, we will evaluate it on several
+key points:
+1. Demonstrate that the user has an ID of 0 (root) by showing the output of the 'id'
+command.
+2. Show that we can run 'sudo' commands easily and without any permissions issues.
+3. Evaluate the ease of use and setup of the rootkit, including the level of complexity for a
+non-technical user.
+4. Demonstrate the ability for an unprivileged user to reliably access the rootkit.
+5. Show that the rootkit can persist between system boots, even after a system reboot.
+Technical Requirements:
+● 32-bit virtual machine running through QEMU
+● GitHub repository
+Description of Project Code Files:
+Kernel Module:
+● Registers a character device that exposes ioctl commands for the client command
+interpreter.
+User-facing Application:
+● Converts terminal commands from the user into ioctl commands for the registered
+character device.
+Evaluation of the project will be based on the successful demonstration of these key evaluation
+points, and the overall ability of the rootkit to persist in the system and provide access to root
+privileges for the user.
 
-feature timeline:
-(mid-to-late february)
--privelige escalation backdoor(either through signals or ioctls)
--compromising /dev/urandom
--hiding files and/or directories
-
-(rest of time)
--(advanced)exploring process injection techniques
-    -overwriting text segment directly
-    -overriding/redirecting dynamic symbols
-
-evaluation plans:
-???
-
-technical requirements:
--32-bit virtual machine running through qemu
--github repo
-
-
-
-description of project code files:
-
-kernel module
--registers a char device that exposes ioctl commands for the client command 
-    interpreter
-
-user-facing application
--converts terminal commands from user into ioctl commands to the registered char
-    device
-
-
-
-PROCESS INJECTION RESEARCH
---------------------------------------------------------------------------------
-from philip: process_vm_writev/readv
-
-
-
-files of interest:
-fs/exec.c (code for executing new programs)
-include/linux/binfmts.h (header lib for loading of various binaries)
-fs/binfmt_elf (code for loading elf binaries)
-
-structs of interest:
-include/linux/binfmts.h:
-    linux_binprm (stores state for exec'ing programs)
-    linux_binfmt (defines a type of binary file, contains callbacks for loading 
-        binaries and shared libraries)
-    
-functions of interest:
-fs/exec.c:
-    do_execve (top-level kernel routine for execve)
-    do_execveat_common
-    bprm_execve
-    do_open_execat (this calls deny_write_access on the progam file, may want to
-        undo this)
-    exec_binprm
-    search_binary_handler (finds the correct loader)
-fs/binfmt_elf:
-    load_elf_binary (loads elf binaries, HUGE(500+ lines))
-    load_elf_library (loads elf libraries, much smaller but only appears to be
-        used for dynamic loading rather than linking)
