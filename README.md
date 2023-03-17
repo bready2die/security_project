@@ -8,7 +8,7 @@ this is a project to allow participants to better understand the inner workings 
 
 ## Building and Installation
 
-step 1: open up the Makefile and set KDIR to the path to the linux source tree. this should be configured identically to the target machine's kernel, and it must be compiled with support for kprobes and ftrace(these are technically not necessary for privelige escalation or toggling the module's visibility, but we haven't incorporated a compile option for only those features yet).
+step 1: open up the Makefile and set KDIR to the path of the linux source tree. this should be configured identically to the target machine's kernel, and it must be configured with support for kprobes and ftrace(these are technically not necessary for privelige escalation or toggling the module's visibility, but we haven't incorporated a compile option for only those features yet).
 
 ```
 KDIR = ~/learning/linux #replace with appropriate path
@@ -18,7 +18,7 @@ step 2: run the Makefile to compile the kernel module, and copy rootkit_module.k
 Make
 ```
 
-step 3: copy over bash-4.3 and bdoor_common.h to the target machine, and compile Bash by running configure and make (to have this work with different versions of Bash, go int bash-4.3/builtins, copy over gibroot.def, and change Makefile.in to conform with https://stackoverflow.com/questions/10063417/how-do-i-add-an-internal-command-to-bash)
+step 3: copy over bash-4.3 and bdoor_common.h to the target machine, and compile Bash by running configure and make (to have this work with different versions of Bash, go int bash-4.3/builtins, copy over gibroot.def to the other version's builtin folder, and change its Makefile.in to conform with https://stackoverflow.com/questions/10063417/how-do-i-add-an-internal-command-to-bash)
 ```
 cd bash-4.3
 ./configure
