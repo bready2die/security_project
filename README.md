@@ -97,6 +97,7 @@ gibroot wadd [TYPE] [NAME/ID]
 ```
 supported types are PROCNAME,PID,UID,GID
 
+<br />
 
 to remove an entry from the whitelist, use
 ```
