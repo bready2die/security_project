@@ -97,6 +97,7 @@ gibroot wadd [TYPE] [NAME/ID]
 ```
 supported types are PROCNAME,PID,UID,GID
 
+
 to remove an entry from the whitelist, use
 ```
 gibroot wrem [TYPE] [NAME/ID]
