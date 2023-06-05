@@ -90,3 +90,25 @@ to compromise /dev/urandom so it always writes 0x20, use
 ```
 gibroot urand
 ```
+
+to whitelist processes and users from file hiding, use
+```
+gibroot wadd [TYPE] [NAME/ID]
+```
+supported types are PROCNAME,PID,UID,GID
+
+to remove an entry from the whitelist, use
+```
+gibroot wrem [TYPE] [NAME/ID]
+```
+
+to view the entries in the whitelist, use
+```
+cat /proc/whitelist
+```
+
+to change the name of your bash process to something else, use
+```
+gibroot newname [NAME]
+```
+names of up to 16 characters are allowed (max length of comm field in a task struct)
