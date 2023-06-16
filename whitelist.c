@@ -495,8 +495,8 @@ static int whitelist_open(struct inode *inode,struct file *file)
 
 const struct proc_ops whitelist_ops = {
         .proc_open = whitelist_open,
-        .proc_read=seq_read,
-        .proc_release=single_release,
+        .proc_read = seq_read,
+        .proc_release = single_release,
 };
 
 struct proc_dir_entry *whitelist_viewer;

