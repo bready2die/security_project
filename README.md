@@ -124,12 +124,14 @@ names of up to 16 characters are allowed (max length of comm field in a task str
 
 to hide open sockets from userspace, use
 ```
-gibroot hmod [TYPE] [STYPE] [PORT]
+gibroot hport [TYPE] [STYPE] [PORT]
 ```
 to unhide open sockets, use
 ```
-gibroot smod [TYPE] [STYPE] [PORT]
+gibroot sport [TYPE] [STYPE] [PORT]
 ```
 supported types for the blacklist are LOCAL, SOURCE, and DEST
 
 supported stypes for the blacklist are STREAM, DGRAM, RAW, RDM, SEQPACKET, DCCP, and PACKET
+
+NOTE: I have experienced a (possibly erroneous) deadlock involving ehash_locks with port/socket hiding
