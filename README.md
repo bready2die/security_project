@@ -130,6 +130,10 @@ to unhide open sockets, use
 ```
 gibroot sport [TYPE] [STYPE] [PORT]
 ```
+to see the contents of the socket blacklist, use
+```
+cat /proc/sock_blist
+```
 supported types for the blacklist are LOCAL, SOURCE, and DEST
 
 supported stypes for the blacklist are STREAM, DGRAM, RAW, RDM, SEQPACKET, DCCP, and PACKET
