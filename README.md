@@ -112,6 +112,7 @@ to view the entries in the whitelist, use
 cat /proc/whitelist
 ```
 supported types for the whitelist are PROCNAME,PID,UID,GID
+
 <br />
 
 to change the name of your bash process to something else, use
