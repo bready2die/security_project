@@ -76,11 +76,11 @@ gibroot smod
 
 to hide a file(s) or directory(s), use
 ```
-gibroot hide [file(s)]
+gibroot hide <file> ...
 ```
 to unhide files, use
 ```
-gibroot show [file(s)]
+gibroot show <file> ...
 ```
 
 <br />
@@ -101,11 +101,11 @@ gibroot urand
 
 to whitelist processes and users from file hiding, use
 ```
-gibroot wadd [TYPE] [NAME/ID]
+gibroot wadd <TYPE> <NAME/ID> ...
 ```
 to remove an entry from the whitelist, use
 ```
-gibroot wrem [TYPE] [NAME/ID]
+gibroot wrem <TYPE> <NAME/ID> ...
 ```
 to view the entries in the whitelist, use
 ```
@@ -116,7 +116,7 @@ supported types for the whitelist are PROCNAME,PID,UID,GID
 
 to change the name of your bash process to something else, use
 ```
-gibroot newname [NAME]
+gibroot newname <NAME>
 ```
 names of up to 16 characters are allowed (max length of comm field in a task struct)
 
@@ -124,11 +124,11 @@ names of up to 16 characters are allowed (max length of comm field in a task str
 
 to hide open sockets from userspace, use
 ```
-gibroot hport [TYPE] [STYPE] [PORT]
+gibroot hport <TYPE> <STYPE> <PORT> ...
 ```
 to unhide open sockets, use
 ```
-gibroot sport [TYPE] [STYPE] [PORT]
+gibroot sport <TYPE> <STYPE> <PORT> ...
 ```
 to see the contents of the socket blacklist, use
 ```
