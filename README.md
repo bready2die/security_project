@@ -140,3 +140,18 @@ supported types for the blacklist are LOCAL, SOURCE, and DEST
 supported stypes for the blacklist are STREAM, DGRAM, RAW, RDM, SEQPACKET, DCCP, and PACKET
 
 NOTE: I have experienced a (possibly erroneous) deadlock involving ehash_locks with port/socket hiding
+
+<br />
+
+to substitute a file with another file when it is opened (or statted), use
+```
+gibroot frep <original file> <replacement file> ...
+```
+to undo this substitution, use
+```
+gibroot funrep <original file> ...
+```
+to see what files are being replaced/substituted, use
+```
+cat /proc/replacements
+```
